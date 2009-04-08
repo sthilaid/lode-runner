@@ -1,1 +1,0 @@
-../gl-fonts/sprite.scm
