@@ -2,10 +2,13 @@ SPRITE_FILES = $(wildcard sprites/*.ppm) $(wildcard sprites/*.bmp)
 FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
 
-GL_FILES = opengl.scm glu.scm
-UI_FILES = sdl-interface.scm sdl-user-interface.scm
-DEVEL_FILES = $(GL_FILES) rbtree.scm scm-lib.scm scm-lib-macro.scm stats.scm ppm-reader.scm texture.scm sprite.scm font.scm user-interface-images.scm $(UI_FILES)
-GAME_FILES =  $(DEVEL_FILES) new-engine.scm
+SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
+GL_FILES = opengl.scm
+FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
+UI_FILES = sdl-interface.scm user-interface-images.scm user-interface.scm 
+THREAD_SIM_FILES = rbtree.scm
+DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(THREAD_SIM_FILES) $(FONT_FILES) $(UI_FILES)
+GAME_FILES =  $(DEVEL_FILES) game-engine.scm
 
 ## compilers
 GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) #-debug
@@ -24,7 +27,8 @@ SCMLIB_PATH=$(HOME)/projet/maitrise/scm-lib
 THRDSIM_PATH=$(HOME)/projet/maitrise/thread-simulation
 SDLINTERFACE_PATH=$(HOME)/projet/maitrise/sdl-interface
 OPENGL-FFI_PATH=$(HOME)/projet/scheme/opengl-ffi
-GL-FONT_PATH=$(HOME)/projet/maitrise/gl-font
+GL-FONT_PATH=$(HOME)/projet/maitrise/gl-fonts
+SDL-INTERFACE_PATH = $(HOME)/projet/maitrise/sdl-interface
 
 LD_OPTIONS_LIN = -lutil -lSDL -lSDL_mixer
 LD_OPTIONS_COMMON =-L$(GAMBIT_LIB) -L$(GL_LIB) -L$(SDL_LIB) -L$(SDL_mixer_LIB) -lgambc 
@@ -68,7 +72,6 @@ run-game: $(GAME_FILES:.scm=.o1)
 
 user-interface-images.scm: texture-macro.scm font-macro.scm scm-lib-macro.scm
 user-interface.scm: scm-lib-macro.scm opengl-header.scm
-sdl-user-interface.scm:  scm-lib-macro.scm opengl-header.scm
 new-engine.scm: thread-simulation-macro.scm class.scm thread-simulation.scm
 opengl.scm: opengl-header.scm
 
@@ -88,9 +91,12 @@ scm-lib-macro.scm: $(SCMLIB_PATH)/scm-lib-macro.scm
 	cp $(SCMLIB_PATH)/scm-lib-macro.scm .
 
 ## Thread simulation library
-IMPORTED-FILES += match.scm thread-simulation thread-simulation-macro.scm
+IMPORTED-FILES += match.scm rbtree.scm \
+                  thread-simulation thread-simulation-macro.scm
 match.scm: $(THRDSIM_PATH)/match.scm
 	cp $(THRDSIM_PATH)/match.scm .
+rbtree.scm: $(THRDSIM_PATH)/rbtree.scm
+	cp $(THRDSIM_PATH)/rbtree.scm .
 thread-simulation.scm: $(THRDSIM_PATH)/thread-simulation.scm
 	cp $(THRDSIM_PATH)/thread-simulation.scm .
 thread-simulation-macro.scm: $(THRDSIM_PATH)/thread-simulation-macro.scm
@@ -108,18 +114,24 @@ IMPORTED-FILES += font.scm font-macro.scm sprite.scm sprite-macro.scm \
 									texture.scm texture-macro.scm ppm-reader.scm
 font.scm: $(GL-FONT_PATH)/font.scm
 	cp $(GL-FONT_PATH)/font.scm .
-font-macro.scm: $(GL-FONT-MACRO_PATH)/font-macro.scm
-	cp $(GL-FONT-MACRO_PATH)/font-macro.scm .
-sprite.scm: $(GL-SPRITE_PATH)/sprite.scm
-	cp $(GL-SPRITE_PATH)/sprite.scm .
-sprite-macro.scm: $(GL-SPRITE-MACRO_PATH)/sprite-macro.scm
-	cp $(GL-SPRITE-MACRO_PATH)/sprite-macro.scm .
-texture.scm: $(GL-SPRITE_PATH)/texture.scm
-	cp $(GL-SPRITE_PATH)/texture.scm .
-texture-macro.scm: $(GL-SPRITE-MACRO_PATH)/texture-macro.scm
-	cp $(GL-SPRITE-MACRO_PATH)/texture-macro.scm .
+font-macro.scm: $(GL-FONT_PATH)/font-macro.scm
+	cp $(GL-FONT_PATH)/font-macro.scm .
+sprite.scm: $(GL-FONT_PATH)/sprite.scm
+	cp $(GL-FONT_PATH)/sprite.scm .
+sprite-macro.scm: $(GL-FONT_PATH)/sprite-macro.scm
+	cp $(GL-FONT_PATH)/sprite-macro.scm .
+texture.scm: $(GL-FONT_PATH)/texture.scm
+	cp $(GL-FONT_PATH)/texture.scm .
+texture-macro.scm: $(GL-FONT_PATH)/texture-macro.scm
+	cp $(GL-FONT_PATH)/texture-macro.scm .
 ppm-reader.scm: $(GL-FONT_PATH)/ppm-reader.scm
 	cp $(GL-FONT_PATH)/ppm-reader.scm .
+
+## interface to sdl
+IMPORTED-FILES += sdl-interface.scm
+sdl-interface.scm: $(SDL-INTERFACE_PATH)/sdl-interface.scm
+	cp $(SDL-INTERFACE_PATH)/sdl-interface.scm .
+
 
 ## Basic rule for compiling scheme files
 
