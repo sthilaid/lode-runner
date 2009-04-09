@@ -30,7 +30,7 @@ OPENGL-FFI_PATH=$(HOME)/projet/scheme/opengl-ffi
 GL-FONT_PATH=$(HOME)/projet/maitrise/gl-fonts
 SDL-INTERFACE_PATH = $(HOME)/projet/maitrise/sdl-interface
 
-LD_OPTIONS_LIN = -lutil -lSDL -lSDL_mixer
+LD_OPTIONS_LIN = -lutil -lSDL -lSDL_mixer -lglut
 LD_OPTIONS_COMMON =-L$(GAMBIT_LIB) -L$(GL_LIB) -L$(SDL_LIB) -L$(SDL_mixer_LIB) -lgambc 
 
 
@@ -136,7 +136,7 @@ sdl-interface.scm: $(SDL-INTERFACE_PATH)/sdl-interface.scm
 ## Basic rule for compiling scheme files
 
 .scm.o1:
-	$(GSC) -cc-options "$(INCLUDE_OPTIONS)" -ld-options "$(LD_OPTIONS)" -debug-source -o $*.o1 $*.scm
+	$(GSC) -cc-options "$(INCLUDE_OPTIONS)" -ld-options "$(LD_OPTIONS)" -o $*.o1 $*.scm
 
 
 ## Welcome banner
