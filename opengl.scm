@@ -1,11 +1,14 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; filename: opengl.scm
+;;
+;; description: Opengl 1.1 ffi interface
+;;
+;; author: David St-Hilaire
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (include "opengl-header.scm")
-
-(c-declare #<<end
-#include <GL/gl.h>
-end
-)
-
 
 ;; /*
 ;;  * Miscellaneous
@@ -91,7 +94,7 @@ end
 
 (define glGetError (c-lambda ( ) GLenum "glGetError"))
 
-(define glGetString (c-lambda ( GLenum ) GLubyte* "glGetString"))
+;(define glGetString (c-lambda ( GLenum ) GLubyte* "glGetString"))
 
 (define glFinish (c-lambda ( ) void "glFinish"))
 
@@ -613,4 +616,3 @@ end
 (define glPushName (c-lambda ( GLuint ) void "glPushName"))
 
 (define glPopName (c-lambda () void "glPopName"))
-
