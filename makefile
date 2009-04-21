@@ -8,8 +8,8 @@ FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
 ENGINE_FILES = game-engine.scm
 UI_FILES = sdl-interface.scm user-interface-images.scm user-interface.scm 
 
-DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(THREAD_SIM_FILES) $(FONT_FILES) 
-GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(THREAD_SIM_FILES) $(FONT_FILES) $(ENGINE_FILES) $(UI_FILES)
+DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) 
+GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(ENGINE_FILES) $(UI_FILES)
 
 ## compilers
 GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug
@@ -25,7 +25,6 @@ GAMBIT_INCLUDE=$(PATH_TO_GAMBIT)/include
 ## Some scheme libraries paths
 OOSYSYEM_PATH=$(HOME)/projet/maitrise/class
 SCMLIB_PATH=$(HOME)/projet/maitrise/scm-lib
-THRDSIM_PATH=$(HOME)/projet/maitrise/thread-simulation
 SDLINTERFACE_PATH=$(HOME)/projet/maitrise/sdl-interface
 OPENGL-FFI_PATH=$(HOME)/projet/scheme/opengl-ffi
 GL-FONT_PATH=$(HOME)/projet/maitrise/gl-fonts
@@ -73,7 +72,7 @@ run-game: $(GAME_FILES:.scm=.o1)
 
 user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
 user-interface.o1: scm-lib-macro.scm opengl-header.scm
-game-engine.o1: thread-simulation-macro.scm class.scm thread-simulation.scm
+game-engine.o1: scm-lib-macro.scm class.scm 
 opengl.o1: opengl-header.scm
 glu.o1: glu-header.scm
 
@@ -92,17 +91,17 @@ scm-lib.scm: $(SCMLIB_PATH)/scm-lib.scm
 scm-lib-macro.scm: $(SCMLIB_PATH)/scm-lib-macro.scm
 	cp $(SCMLIB_PATH)/scm-lib-macro.scm .
 
-## Thread simulation library
-IMPORTED-FILES += match.scm rbtree.scm \
-                  thread-simulation thread-simulation-macro.scm
-match.scm: $(THRDSIM_PATH)/match.scm
-	cp $(THRDSIM_PATH)/match.scm .
-rbtree.scm: $(THRDSIM_PATH)/rbtree.scm
-	cp $(THRDSIM_PATH)/rbtree.scm .
-thread-simulation.scm: $(THRDSIM_PATH)/thread-simulation.scm
-	cp $(THRDSIM_PATH)/thread-simulation.scm .
-thread-simulation-macro.scm: $(THRDSIM_PATH)/thread-simulation-macro.scm
-	cp $(THRDSIM_PATH)/thread-simulation-macro.scm .
+# ## Thread simulation library
+# IMPORTED-FILES += match.scm rbtree.scm \
+#                   thread-simulation thread-simulation-macro.scm
+# match.scm: $(THRDSIM_PATH)/match.scm
+# 	cp $(THRDSIM_PATH)/match.scm .
+# rbtree.scm: $(THRDSIM_PATH)/rbtree.scm
+# 	cp $(THRDSIM_PATH)/rbtree.scm .
+# thread-simulation.scm: $(THRDSIM_PATH)/thread-simulation.scm
+# 	cp $(THRDSIM_PATH)/thread-simulation.scm .
+# thread-simulation-macro.scm: $(THRDSIM_PATH)/thread-simulation-macro.scm
+# 	cp $(THRDSIM_PATH)/thread-simulation-macro.scm .
 
 ## Opengl ffi
 IMPORTED-FILES += opengl.scm opengl-header.scm glu.scm glu-header.scm
