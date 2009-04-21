@@ -210,3 +210,9 @@
          (char-width (font-width current-font)))
     (change-current-char! current-font color char)
     (draw-texture font-name (+ x (* x-offset char-width)) y)))
+
+(define (draw-textured-object font-name color char x y width height)
+  (let* ((current-font (get-font font-name))
+         (char-width (font-width current-font)))
+    (change-current-char! current-font color char)
+    (draw-texture font-name x y width: width height: height)))

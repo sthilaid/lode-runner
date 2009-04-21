@@ -38,11 +38,15 @@
 
 ;; Function which will dray the texture of given string name to the 2d
 ;; (x,y) plane coordinate.
-(define (draw-texture name x y)
+(define (draw-texture name x y #!key (width #f) (height #f))
   (let* ((texture-obj (table-ref texture-table name))
-         (tex-id (texture-id texture-obj))
-         (width (texture-width texture-obj))
-         (height (texture-height texture-obj)))
+         (tex-id      (texture-id texture-obj))
+         (tex-width   (texture-width texture-obj))  
+         (tex-height  (texture-height texture-obj))
+         (width       (if width  width  tex-width))
+         (height      (if height height tex-height))
+         (tex-x-max   (exact->inexact (/ width  tex-width)))
+         (tex-y-max   (exact->inexact (/ height tex-height))))
     (glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA)
     (glColor4f 0. 0. 0. 1.)
     (glEnable GL_TEXTURE_2D)
@@ -50,9 +54,9 @@
     (glBindTexture GL_TEXTURE_2D tex-id)
     (glBegin GL_QUADS)
     (begin
-      (glTexCoord2f 0.0 0.0) (glVertex2i x y)
-      (glTexCoord2f 0.0 1.0) (glVertex2i x (+ y height))
-      (glTexCoord2f 1.0 1.0) (glVertex2i (+ x width) (+ y height))
-      (glTexCoord2f 1.0 0.0) (glVertex2i (+ x width) y))
+      (glTexCoord2f 0.0       0.0)       (glVertex2i x           y)
+      (glTexCoord2f 0.0       tex-y-max) (glVertex2i x           (+ y height))
+      (glTexCoord2f tex-x-max tex-y-max) (glVertex2i (+ x width) (+ y height))
+      (glTexCoord2f tex-x-max 0.0)       (glVertex2i (+ x width) y))
     (glEnd)
     (glDisable GL_TEXTURE_2D)))

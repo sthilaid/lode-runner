@@ -164,14 +164,19 @@
         (texture-generation-code "1+1;\n")
         ;; The init script contains only the texture settings.
         (texture-init-script
-         (let ((tex-id-sym (gensym 'tex-id)))
+         (let* ((tex-id-sym (gensym 'tex-id))
+               (wrap-s (if (memq 'loop-x options) 'GL_REPEAT 'GL_CLAMP))
+               (wrap-t (if (memq 'loop-y options) 'GL_REPEAT 'GL_CLAMP))
+               (mag-filter 'GL_NEAREST)
+               (min-filter mag-filter))
+           (if (memq 'loop-x options) (pp `(,font-name : ,wrap-s ,wrap-t)))
           `(lambda (,tex-id-sym)
              (lambda ()
                (glBindTexture GL_TEXTURE_2D ,tex-id-sym)
-               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_S GL_CLAMP)
-               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_T GL_CLAMP)
-               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_NEAREST)
-               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_NEAREST)
+               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_S ,wrap-s)
+               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_T ,wrap-t)
+               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER ,mag-filter)
+               (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER ,min-filter)
                ))))
         ;; This function returns a pointer to the image array.
         (get-pointer-code

@@ -47,11 +47,88 @@
 ;; Abstract classes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; (define-class colored ()     (slot: color))
-(define-class statefull ()   (slot: state))
-(define-class moving ()      (slot: velocity))
-(define-class game-object () (slot: position))
+;; (define-class colored ()   (slot: color))
+(define-class statefull () (slot: state))
+(define-class moving ()    (slot: velocity))
 
+;; game-object has x,y pos and with and height for bbox
+(define-class game-object (rect) (slot: id)
+  (constructor: (lambda (self id x y w h)
+                  (set-fields! self game-object
+                               ((x x)
+                                (y y)
+                                (width w)
+                                (height h)
+                                (id id))))))
+
+(define-class stage (game-object)
+  (slot: neighbours)
+  (constructor: (lambda (self id x y w h)
+                  (init! cast: '(game-object * * * * *) self id x y w h)
+                  (stage-neighbours-set! self '()))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Leaf Classes (which produce instances)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Generic function which changes correctly the states of the
+;; statefull objects
+(define-generic change-state!)
+
+;; Stage objects
+(define-class wall  (stage)
+  (constructor:
+   (lambda (self x y w h) (init! cast: '(stage * * * * *)
+                                 self (gensym 'wall) x y w h))))
+(define-class ladder (stage)
+  (constructor:
+   (lambda (self x y w h) (init! cast: '(stage * * * * *)
+                                 self (gensym 'ladder) x y w h))))
+(define-class hand-bar (stage)
+  (constructor:
+   (lambda (self x y w h) (init! cast: '(stage * * * * *)
+                                 self (gensym 'hand-bar) x y w h))))
+
+;; Leaf objects (which the collision res is not trivial)
+(define-class robot (game-object moving statefull))
+(define-class gold  (game-object)
+  (constructor: (lambda (self x y) (init! cast: '(game-object * * * * *)
+                                          self (gensym 'gold) x y 11 13))))
+(define-class player (game-object moving statefull)
+  (constructor: (lambda (self x0 y0 initial-velocity)
+                  (change-state! self 'standing)
+                  (set-fields! self player
+                    ((x x0)
+                     (y y0)
+                     (velocity initial-velocity))))))
+
+
+(define-method (change-state! (p player) new-state)
+  (case new-state
+    ('standing-right
+     (set-fields! p player ((state new-state)
+                            (width  16)
+                            (height 16))))
+    ('standing-up
+     (set-fields! p player ((state new-state)
+                            (width  11)
+                            (height 17))))
+    ('standing-left
+     (set-fields! p player ((state new-state)
+                            (width  16)
+                            (height 16))))
+    ('jumping
+     (set-fields! p player ((state new-state)
+                            (height 16)
+                            (width  20))))
+    ('lader-left
+     (set-fields! p player ((state new-state)
+                            (width  15)
+                            (height 20))))
+    ('lader-right
+     (set-fields! p player ((state new-state)
+                            (width  15)
+                            (height 20))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -102,3 +179,20 @@
          (<= point-y rect-y-max))))
 (define-method (detect-collision? (rect rect) (point point))
   (detect-collision? point rect))
+
+(define tests (list (new wall 10 10 50 50)
+                    (new gold 100 100)))
+
+(define (advance-frame!)
+  tests)
+
+(define-generic render)
+
+(define-method (render (w wall))
+  (draw-textured-object "wall" 'brown 'wall
+                        (wall-x w) (wall-y w) (wall-width w) (wall-height w)))
+
+(define-method (render (g gold))
+  (draw-textured-object "gold" 'regular 'gold
+                        (game-object-x g) (game-object-y g)
+                        (game-object-width g) (game-object-height g)))

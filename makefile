@@ -3,15 +3,16 @@ FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
 
 SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
-GL_FILES = opengl.scm
+GL_FILES = opengl.scm glu.scm
 FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
+ENGINE_FILES = game-engine.scm
 UI_FILES = sdl-interface.scm user-interface-images.scm user-interface.scm 
-THREAD_SIM_FILES = rbtree.scm
-DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(THREAD_SIM_FILES) $(FONT_FILES) $(UI_FILES)
-GAME_FILES =  $(DEVEL_FILES) game-engine.scm
+
+DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(THREAD_SIM_FILES) $(FONT_FILES) 
+GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(THREAD_SIM_FILES) $(FONT_FILES) $(ENGINE_FILES) $(UI_FILES)
 
 ## compilers
-GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) #-debug
+GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug
 CC=gcc
 
 ### PATHS
@@ -58,8 +59,8 @@ LD_OPTIONS = $(LD_OPTIONS_COMMON) $(LD_OPTIONS_LIN)
 
 all: welcome run-game
 
-# devel: $(DEVEL_FILES:.scm=.o1) new-engine.scm
-# 	gsi -:dar start.scm
+devel: $(DEVEL_FILES:.scm=.o1) $(ENGINE_FILES) $(UI_FILES:.scm=.o1)
+	gsi -:dar $^ -e '(main)'
 
 run-game: $(GAME_FILES:.scm=.o1)
 	@echo "*** Compilation Finished ***"
@@ -70,10 +71,11 @@ run-game: $(GAME_FILES:.scm=.o1)
 
 ### "included" macro dependant scheme source files
 
-user-interface-images.scm: texture-macro.scm font-macro.scm scm-lib-macro.scm
-user-interface.scm: scm-lib-macro.scm opengl-header.scm
-new-engine.scm: thread-simulation-macro.scm class.scm thread-simulation.scm
-opengl.scm: opengl-header.scm
+user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
+user-interface.o1: scm-lib-macro.scm opengl-header.scm
+game-engine.o1: thread-simulation-macro.scm class.scm thread-simulation.scm
+opengl.o1: opengl-header.scm
+glu.o1: glu-header.scm
 
 
 ### External Scheme library dependencies
@@ -103,11 +105,15 @@ thread-simulation-macro.scm: $(THRDSIM_PATH)/thread-simulation-macro.scm
 	cp $(THRDSIM_PATH)/thread-simulation-macro.scm .
 
 ## Opengl ffi
-IMPORTED-FILES += opengl.scm opengl-header.scm
+IMPORTED-FILES += opengl.scm opengl-header.scm glu.scm glu-header.scm
 opengl.scm: $(OPENGL-FFI_PATH)/opengl.scm
 	cp $(OPENGL-FFI_PATH)/opengl.scm .
 opengl-header.scm: $(OPENGL-FFI_PATH)/opengl-header.scm
 	cp $(OPENGL-FFI_PATH)/opengl-header.scm .
+glu.scm: $(OPENGL-FFI_PATH)/glu.scm
+	cp $(OPENGL-FFI_PATH)/glu.scm .
+glu-header.scm: $(OPENGL-FFI_PATH)/glu-header.scm
+	cp $(OPENGL-FFI_PATH)/glu-header.scm .
 
 ## Font system
 IMPORTED-FILES += font.scm font-macro.scm sprite.scm sprite-macro.scm \
