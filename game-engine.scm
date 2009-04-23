@@ -1,3 +1,4 @@
+(include "declarations.scm")
 (include "scm-lib-macro.scm")
 (include "class.scm")
 
@@ -181,7 +182,20 @@
   (detect-collision? point rect))
 
 (define tests (list (new wall 10 10 50 50)
-                    (new gold 100 100)))
+                    (new gold 100 100)
+                    (new gold 100 100)
+                    (new gold 100 100)
+                    (new gold 100 100)
+                    (new gold 100 100)
+;;                     (new gold 100 100)
+;;                     (new gold 100 100)
+;;                     (new gold 100 100)
+;;                     (new gold 100 100)
+;;                     (new gold 100 100)
+;;                     (new gold 100 100)
+
+
+                    ))
 
 (define (advance-frame!)
   tests)
@@ -189,10 +203,10 @@
 (define-generic render)
 
 (define-method (render (w wall))
-  (draw-textured-object "wall" 'brown 'wall
+  (draw-textured-object wall 'brown 'wall
                         (wall-x w) (wall-y w) (wall-width w) (wall-height w)))
 
 (define-method (render (g gold))
-  (draw-textured-object "gold" 'regular 'gold
+  (draw-textured-object gold 'regular 'gold
                         (game-object-x g) (game-object-y g)
                         (game-object-width g) (game-object-height g)))

@@ -1,3 +1,4 @@
+(include "declarations.scm")
 (include "opengl-header.scm")
 (include "texture-macro.scm")
 (include "font-macro.scm")

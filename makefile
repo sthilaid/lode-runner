@@ -5,11 +5,12 @@ SOUND_FILES = $(wildcard sounds/*.wav)
 SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
 GL_FILES = opengl.scm glu.scm
 FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
+IMAGE_FILE = user-interface-images.scm 
 ENGINE_FILES = game-engine.scm
-UI_FILES = sdl-interface.scm user-interface-images.scm user-interface.scm 
+UI_FILES = sdl-interface.scm user-interface.scm 
 
-DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) 
-GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(ENGINE_FILES) $(UI_FILES)
+DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE)
+GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE) $(ENGINE_FILES) $(UI_FILES)
 
 ## compilers
 GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug

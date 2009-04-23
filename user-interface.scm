@@ -13,48 +13,33 @@
       (let loop ((i 0) (chars (string->list str)))
         (if (pair? chars)
             (begin
-              (draw-char "bb_fonts" color (car chars) x y i)
+              ;; expecting the bb_fonts to be loaded!
+              (draw-char bb_fonts color (car chars) x y i)
               (loop (+ i 1) (cdr chars)))))))
 
-(define (render-fontified-sprite sprite-name x y state color)
+(define (render-fontified-sprite sprite-font x y state color)
   (if (not (eq? color 'black))
-   (draw-char (symbol->string sprite-name) color state x y 0)))
+      (draw-char sprite-font color state x y 0)))
 
-(define render-scene
-  (let ((last-render-time 0))
-    (lambda (sdl-screen objects)
-      (let ((render-init-time (time->seconds (current-time))))
-       (SDL::with-locked-surface
-        sdl-screen
-        (lambda ()
-          (glClearColor 0. 0. 0. 0.)
-          (glClear GL_COLOR_BUFFER_BIT)
+(define (render-scene sdl-screen objects)
+  (SDL::with-locked-surface
+   sdl-screen
+   (lambda ()
+     (glClearColor 0. 0. 0. 0.)
+     (glClear GL_COLOR_BUFFER_BIT)
 
-          ;; Draw background stuff
-          (for-each render objects)
+     ;; Draw background stuff
+     (for-each render objects)
 
-          (let* ((now (time->seconds (current-time)))
-                 (this-fps (/ 1 (- now last-render-time))))
-            (set! fps-set (cons this-fps fps-set))
-            (set! draw-set (cons (- now render-init-time) draw-set))
-            (if (not (= last-render-time 0))
-                (FPS this-fps))
-            (set! last-render-time now))
+     ;;draw frame-rate just over the green line
+     (if display-fps?
+         (render-string
+          0 11 
+          (with-output-to-string "" (lambda () (show "FPS: " (FPS) "alkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksf")))
+          'white))
 
-          ;; Accumulate last GC time
-          (##gc)
-          (set! GC-dt-set (cons (f64vector-ref (##process-statistics) 14)
-                                GC-dt-set))
-
-          ;;draw frame-rate just over the green line
-          (if display-fps?
-              (render-string
-               0 11 
-               (with-output-to-string "" (lambda () (show "FPS: " (FPS))))
-               'white))
-
-          (glFlush)
-          (SDL::GL::SwapBuffers)))))))
+     (glFlush)
+     (SDL::GL::SwapBuffers))))
 
 (define (reshape w h)
   (let* ((zoom-x (/ w screen-max-x))
@@ -153,7 +138,7 @@
   (glEnable GL_BLEND)
   (glBlendFunc GL_SRC_ALPHA GL_ONE)
 
-  (initialize-textures!)
+  (for-each (lambda (f) (f)) debug-textures)
 
   (reshape w h)
   )
@@ -162,7 +147,8 @@
   ;;(set! simulation-thread (make-thread (game-loop (current-thread))))
   (set! event-thread      (make-thread event-thread-thunk))
   ;;(thread-start! simulation-thread)
-  (thread-start! event-thread))
+  (thread-start! event-thread)
+  )
 
 (define (redraw-loop)
   (SDL::set-window-caption "Space Invaders" "Space Invaders")
@@ -173,6 +159,7 @@
       (if screen
           (call/cc
            (lambda (k)
+             ;; initialisation
              (set! sdl-screen screen)
              (set! return
                    (lambda (ret-val)
@@ -181,11 +168,15 @@
                      (k ret-val)))
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
-             (let loop ()
+             ;; main loop with framerate calculation
+             (let loop ((render-init-time (time->seconds (current-time))))
                (if exit-requested? (quit))
                (let ((objects (advance-frame!)))
                  (render-scene screen objects))
-               (loop))))
+               (let* ((now (time->seconds (current-time)))
+                      (this-fps (floor (/ 1 (- now render-init-time)))))
+                 (FPS this-fps))
+               (loop (time->seconds (current-time))))))
           (display "Could not set SDL screen")))
   )
 
@@ -195,7 +186,7 @@
   (set! exit-requested? #t))
 (define exit-requested? #f)
 (define return #f)
-(define (quit) (return 0))
+(define (quit) (pp `(average frame-rate: ,(FPS))) (return 0))
 
 ;; Main function which only sets up and starts the game threads
 (define (main)
