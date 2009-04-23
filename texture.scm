@@ -11,7 +11,7 @@
 
 (define-type texture id width height init-script)
 
-;; Global texture table that contains every registred texture data.
+;; Global texture table that contains every registered texture data.
 (define texture-table (make-table))
 
 

@@ -183,15 +183,24 @@
 (define (add-new-font! font-name font-obj)
   (table-set! global-fonts-table font-name font-obj))
 
+(define texture-cache '())
+(define (load-texture-cache x)
+  (if (equal? x texture-cache)
+      #f
+      (begin
+        (set! texture-cache x)
+        #t)))
+
 ;; This will set the (color char) combination of the specified font as
 ;; the active character for that font.
 (define (change-current-char! font color char)
-  (let* ((ptr-index (get-char-index (font-id font) color char))
-         (ptr ((font-get-pointer font) ptr-index)))
-    (glBindTexture GL_TEXTURE_2D (font-texture-id font))
-    (glTexImage2D GL_TEXTURE_2D 0 GL_RGBA
-                  (font-width font) (font-height font)
-                  0 GL_RGBA GL_UNSIGNED_BYTE ptr)))
+  (if (load-texture-cache (list font color char))
+      (let* ((ptr-index (get-char-index (font-id font) color char))
+             (ptr ((font-get-pointer font) ptr-index)))
+        (glBindTexture GL_TEXTURE_2D (font-texture-id font))
+        (glTexImage2D GL_TEXTURE_2D 0 GL_RGBA
+                      (font-width font) (font-height font)
+                      0 GL_RGBA GL_UNSIGNED_BYTE ptr))))
 
 
 
