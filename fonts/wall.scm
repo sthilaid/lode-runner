@@ -1,3 +1,3 @@
-((size: 16 16)
- (colors: (brown))
+((size: 8 8)
+ (colors: (pink))
  (chars: (wall)))

@@ -5,7 +5,7 @@
 
 ;; Stage objects
 
-(define-symmetric-font "wall" 16 16 loop-x loop-y)
+(define-symmetric-font "wall" 8 8 loop-x loop-y)
 (define-symmetric-font "ladder" 32 32 loop-y)
 (define-symmetric-font "handbar" 2 2 loop-x)
 
