@@ -35,7 +35,7 @@
      (if display-fps?
          (render-string
           0 11 
-          (with-output-to-string "" (lambda () (show "FPS: " (FPS) "alkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksfalkj;adsf;lkj;lkjf;lksf")))
+          (with-output-to-string "" (lambda () (show "FPS: " (FPS))))
           'white))
 
      (glFlush)
@@ -179,8 +179,6 @@
                (loop (time->seconds (current-time))))))
           (display "Could not set SDL screen")))
   )
-
-(define usage-message "USAGE: ./space-invaders\n")
 
 (define (request-exit)
   (set! exit-requested? #t))

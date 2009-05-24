@@ -81,6 +81,14 @@
   (constructor:
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
                                  self (gensym 'wall) x y w h))))
+
+(define-class poly-wall  (stage)
+  (slot: points)
+  (constructor:
+   (lambda (self x y w h points)
+     (init! cast: '(stage * * * * *) self (gensym 'poly-wall) x y w h)
+     (poly-wall-points-set! self points))))
+
 (define-class ladder (stage)
   (constructor:
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
@@ -181,20 +189,25 @@
 (define-method (detect-collision? (rect rect) (point point))
   (detect-collision? point rect))
 
-(define tests (list (new wall 10 10 50 50)
-                    (new gold 100 100)
-                    (new gold 100 100)
-                    (new gold 100 100)
-                    (new gold 100 100)
-                    (new gold 100 100)
-;;                     (new gold 100 100)
-;;                     (new gold 100 100)
-;;                     (new gold 100 100)
-;;                     (new gold 100 100)
-;;                     (new gold 100 100)
-;;                     (new gold 100 100)
+(define tests (list ;(new wall 10 10 50 50)
+                    (new gold 30 10)
+                    (new poly-wall 'dont-care 'dont-care 'dont-care 'dont-care
+                         (list (new point 30 30)
+                               (new point 30 46)
+                               (new point 46 30)
 
+                               (new point 46 30)
+                               (new point 30 46)
+                               (new point 46 46)
 
+                               (new point 46 30)
+                               (new point 46 62)
+                               (new point 62 30)
+
+                               (new point 62 30)
+                               (new point 46 62)
+                               (new point 62 62)
+                               ))
                     ))
 
 (define (advance-frame!)
@@ -203,10 +216,13 @@
 (define-generic render)
 
 (define-method (render (w wall))
-  (draw-textured-object wall 'brown 'wall
+  (draw-textured-object wall 'pink 'wall
                         (wall-x w) (wall-y w) (wall-width w) (wall-height w)))
 
 (define-method (render (g gold))
   (draw-textured-object gold 'regular 'gold
                         (game-object-x g) (game-object-y g)
                         (game-object-width g) (game-object-height g)))
+
+(define-method (render (w poly-wall))
+  (draw-textured-triangles wall 'pink 'wall (poly-wall-points w)))
