@@ -73,7 +73,7 @@ run-game: $(GAME_FILES:.scm=.o1)
 
 user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
 user-interface.o1: scm-lib-macro.scm opengl-header.scm
-game-engine.o1 game-engine.scm: scm-lib-macro.scm class.scm
+game-engine.o1 game-engine.scm: scm-lib-macro.scm class.scm class_.scm
 level-loader.o1 level-loader.scm: class_.scm
 opengl.o1: opengl-header.scm
 glu.o1: glu-header.scm
