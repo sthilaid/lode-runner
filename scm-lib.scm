@@ -108,11 +108,12 @@
    ((pred (car list)) (cons (car list) (filter pred (cdr list))))
    (else (filter pred (cdr list)))))
 
-(define (exists pred list)
+(define (exists pred list . lists)
   (cond
    ((not (pair? list)) #f)
-   ((pred (car list)) (car list))
-   (else  (exists pred (cdr list)))))
+   ((apply pred (car list) (map car lists))
+    (apply values (car list) (map car lists)))
+   (else  (apply exists pred (cdr list) (map cdr lists)))))
 
 ;; returns the first result of the application of pred to a list
 ;; element that is not #f.
@@ -122,11 +123,11 @@
    ((pred (car list)) => (lambda (x) x))
    (else  (find-value pred (cdr list)))))
 
-(define (forall pred list)
+(define (forall pred list . lists)
   (cond
    ((not (pair? list)) #t)
-   ((not (pred (car list))) #f)
-   (else (forall pred (cdr list)))))
+   ((not (apply pred (car list) (map car lists))) #f)
+   (else (apply forall pred (cdr list) (map cdr lists)))))
 
 (define (fold-l f acc list)
   (if (not (pair? list))
@@ -241,6 +242,18 @@
                                    (cons v1s vss)
                                    (map (lambda (x) '()) (cons v1 vs)))))))))
 
+(define (map-with-index f l . ls)
+  (let loop ((i 0) (l l) (ls ls) (acc '()))
+    (if (not (pair? l))
+        (reverse acc)
+        (loop (+ i 1) (cdr l) (map cdr ls)
+              (cons (apply f i (car l) (map car ls)) acc)))))
+
+(define (for-each-with-index f l . ls)
+  (let loop ((i 0) (l l) (ls ls))
+    (if (pair? l)
+        (begin (apply f i (car l) (map car ls))
+               (loop (+ i 1) (cdr l) (map cdr ls))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;; Math stuff ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -531,7 +544,34 @@
 (define (make-set . values)
   (list->set eq? values))
 
-;; Randomize current mrg's seed
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Using the usual terminology: m rows by n columns
+(define (make-matrix2d-with-index m n #!optional (init-value (lambda (i j) 0)))
+  (include "scm-lib-macro.scm")
+  (let ((row-container (make-vector m)))
+    (for i 0 (< i m)
+         (let ((row-vector (make-vector n)))
+           (for j 0 (< j n) (vector-set! row-vector j (init-value i j)))
+           (vector-set! row-container i row-vector)))
+    row-container))
+
+(define (make-matrix2d m n #!optional (init-value 0))
+  (make-matrix2d-with-index m n (lambda (i j) init-value)))
+
+(define (matrix2d-set! mat i j value)
+  (vector-set! (vector-ref mat i) j value))
+
+(define (matrix2d-get mat i j)
+  (vector-ref (vector-ref mat i) j))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RNG seed randomization, !! must be at the end of this file !!
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Randomize current rng's seed
 (random-source-randomize! default-random-source)
-
-

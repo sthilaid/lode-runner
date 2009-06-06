@@ -12,6 +12,7 @@
 ;;;; Rectangle structure used in collision detection ;;;;
 (define-class point () (slot: x) (slot: y))
 (define-class rect (point) (slot: width) (slot: height))
+(define-class triangle () (slot: p1) (slot: p2) (slot: p3))
 
 ;; these are translation of the pos2d lib from scm-lib into oo
 (define (point-add p1 p2) (new point
@@ -37,6 +38,54 @@
         (y-fact (if (memq 'y options) -1 1)))
     (new point (* x-fact (point-x dir)) (* y-fact (point-y dir)))))
 
+(define (triangle->list t)
+  (list (triangle-p1 t) (triangle-p2 t) (triangle-p3 t)))
+
+(define (list->triangle lst)
+  (new triangle (car lst) (cadr lst) (caddr lst)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Grid
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define grid-width  48)
+(define grid-height 31)
+(define grid-cell-w 8)
+(define grid-cell-h 8)
+
+(define (make-grid) (make-matrix2d grid-width grid-height))
+(define make-grid-cell cons)
+(define grid-cell-i car)
+(define grid-cell-j cdr)
+(define (grid-cell-eq? c1 c2) (and (= (grid-cell-i c1) (grid-cell-i c2))
+                                   (= (grid-cell-j c1) (grid-cell-j c2))))
+
+;; updates the game-object's grid cells
+(define (grid-update grid obj)
+  (let ((old-grid-cells (game-object-grid-cells obj))
+        (new-grid-cells (get-grid-cells obj)))
+    (for-each
+     (lambda (invalid-cell)
+       (let* ((i (grid-cell-i invalid-cell))
+              (j (grid-cell-j invalid-cell))
+              (grid-objects (matrix2d-get grid i j)))
+         (matrix2d-set! grid i j (set-remove eq? obj grid-objects))))
+     (set-substract grid-cell-eq? old-grid-cells new-grid-cells))
+    (for-each
+     (lambda (new-cell)
+       (let* ((i (grid-cell-i new-cell))
+              (j (grid-cell-j new-cell))
+              (grid-objects (matrix2d-get grid i j)))
+         (matrix2d-set! grid i j (set-add eq? obj grid-objects))))
+     (set-substract grid-cell-eq? new-grid-cells old-grid-cells))))
+
+(define (grid-coord->world-coord rect)
+  (values (* (point-x rect)     grid-cell-w)
+          (* (point-y rect)     grid-cell-h)
+          (* (rect-width rect)  grid-cell-w)
+          (* (rect-height rect) grid-cell-h)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -53,14 +102,15 @@
 (define-class moving ()    (slot: velocity))
 
 ;; game-object has x,y pos and with and height for bbox
-(define-class game-object (rect) (slot: id)
+(define-class game-object (rect) (slot: id) (slot: grid-cells)
   (constructor: (lambda (self id x y w h)
                   (set-fields! self game-object
                                ((x x)
                                 (y y)
                                 (width w)
                                 (height h)
-                                (id id))))))
+                                (id id)
+                                (grid-cells (empty-set)))))))
 
 (define-class stage (game-object)
   (slot: neighbours)
@@ -82,62 +132,58 @@
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
                                  self (gensym 'wall) x y w h))))
 
-(define-class poly-wall  (stage)
-  (slot: points)
-  (constructor:
-   (lambda (self x y w h points)
-     (init! cast: '(stage * * * * *) self (gensym 'poly-wall) x y w h)
-     (poly-wall-points-set! self points))))
-
 (define-class ladder (stage)
   (constructor:
-   (lambda (self x y w h) (init! cast: '(stage * * * * *)
-                                 self (gensym 'ladder) x y w h))))
-(define-class hand-bar (stage)
+   (lambda (self x y h) (init! cast: '(stage * * * * *)
+                               self (gensym 'ladder) x y 2 h))))
+(define-class handbar (stage)
   (constructor:
-   (lambda (self x y w h) (init! cast: '(stage * * * * *)
-                                 self (gensym 'hand-bar) x y w h))))
+   (lambda (self x y w) (init! cast: '(stage * * * * *)
+                               self (gensym 'handbar) x y w 1))))
 
-;; Leaf objects (which the collision res is not trivial)
-(define-class robot (game-object moving statefull))
 (define-class gold  (game-object)
   (constructor: (lambda (self x y) (init! cast: '(game-object * * * * *)
-                                          self (gensym 'gold) x y 11 13))))
-(define-class player (game-object moving statefull)
+                                          self (gensym 'gold) x y 2 2))))
+
+(define-class robot (game-object moving statefull)
   (constructor: (lambda (self x0 y0 initial-velocity)
-                  (change-state! self 'standing)
+                  ;;(change-state! self 'standing)
                   (set-fields! self player
                     ((x x0)
                      (y y0)
+                     (width  2)
+                     (height 3)
+                     (state 'standing-up)
                      (velocity initial-velocity))))))
 
+(define-class player (game-object moving statefull)
+  (constructor: (lambda (self x0 y0 initial-velocity)
+                  ;;(change-state! self 'standing)
+                  (set-fields! self player
+                    ((x x0)
+                     (y y0)
+                     (width  2)
+                     (height 3)
+                     (state 'standing-up)
+                     (velocity initial-velocity))))))
 
-(define-method (change-state! (p player) new-state)
-  (case new-state
-    ('standing-right
-     (set-fields! p player ((state new-state)
-                            (width  16)
-                            (height 16))))
-    ('standing-up
-     (set-fields! p player ((state new-state)
-                            (width  11)
-                            (height 17))))
-    ('standing-left
-     (set-fields! p player ((state new-state)
-                            (width  16)
-                            (height 16))))
-    ('jumping
-     (set-fields! p player ((state new-state)
-                            (height 16)
-                            (width  20))))
-    ('lader-left
-     (set-fields! p player ((state new-state)
-                            (width  15)
-                            (height 20))))
-    ('lader-right
-     (set-fields! p player ((state new-state)
-                            (width  15)
-                            (height 20))))))
+(define (player-direction p)
+  (if (< (player-velocity p) 0) 'left 'right))
+
+(define (get-grid-cells obj)
+  (let ((x     (game-object-x  obj))
+        (y     (game-object-y  obj))
+        (w-max (game-object-width  obj))
+        (h-max (game-object-height obj)))
+    (let loop ((w 0) (h 0) (cells '()))
+      (if (< h h-max)
+          (if (< w w-max)
+              (loop (+ w 1) h (cons (make-grid-cell (+ x w) (+ y h))
+                                    cells))
+              (loop 0 (+ h 1) cells))
+          cells))))
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -145,84 +191,41 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-generic detect-collision?)
+(define (detect-collision obj1 obj2)
+  (exists grid-cell-eq?
+          (game-object-grid-cells obj1)
+          (game-object-grid-cells obj2)))
 
-;; Simple rectangular collision detection. Not optimized.
-(define-method (detect-collision? (r1 rect) (r2 rect))
-  (let* ((r1-x1 (rect-x r1))
-         (r1-x2 (+ r1-x1 (rect-width r1)))
-         (r1-x-min (min r1-x1 r1-x2))
-         (r1-x-max (max r1-x1 r1-x2))
-         (r1-y1 (rect-y r1))
-         (r1-y2 (+ r1-y1 (rect-height r1)))
-         (r1-y-min (min r1-y1 r1-y2))
-         (r1-y-max (max r1-y1 r1-y2))
 
-         (r2-x1 (rect-x r2))
-         (r2-x2 (+ r2-x1 (rect-width r2)))
-         (r2-x-min (min r2-x1 r2-x2))
-         (r2-x-max (max r2-x1 r2-x2))
-         (r2-y1 (rect-y r2))
-         (r2-y2 (+ r2-y1 (rect-height r2)))
-         (r2-y-min (min r2-y1 r2-y2))
-         (r2-y-max (max r2-y1 r2-y2)))
-    (not (or (< r1-x-max r2-x-min)
-             (> r1-x-min r2-x-max)
-             (< r1-y-max r2-y-min)
-             (> r1-y-min r2-y-max)))))
-
-(define-method (detect-collision? (point point) (rect rect))
-  (let* ((rect-x1 (rect-x rect))
-         (rect-x2 (+ rect-x1 (rect-width rect)))
-         (rect-x-min (min rect-x1 rect-x2))
-         (rect-x-max (max rect-x1 rect-x2))
-         (rect-y1 (rect-y rect))
-         (rect-y2 (+ rect-y1 (rect-height rect)))
-         (rect-y-min (min rect-y1 rect-y2))
-         (rect-y-max (max rect-y1 rect-y2))
-         (point-x (point-x point))
-         (point-y (point-y point)))
-    (and (>= point-x rect-x-min)
-         (<= point-x rect-x-max)
-         (>= point-y rect-y-min)
-         (<= point-y rect-y-max))))
-(define-method (detect-collision? (rect rect) (point point))
-  (detect-collision? point rect))
 
 (define tests (list ;(new wall 10 10 50 50)
-                    (new gold 30 10)
-                    (new poly-wall 'dont-care 'dont-care 'dont-care 'dont-care
-                         (list (new point 30 30)
-                               (new point 30 46)
-                               (new point 46 30)
-
-                               (new point 46 30)
-                               (new point 30 46)
-                               (new point 46 46)
-
-                               (new point 46 30)
-                               (new point 46 62)
-                               (new point 62 30)
-
-                               (new point 62 30)
-                               (new point 46 62)
-                               (new point 62 62)
-                               ))
-                    ))
+                    (new gold 2 2)
+                    (new wall 30 10 5 5)
+                    (new player 20 20 -3)
+                    (new ladder 30 0 9)
+                    (new handbar 0 25 10)))
 
 (define (advance-frame!)
   tests)
 
 (define-generic render)
 
+(define (render-object obj texture color char)
+  (receive (x y w h) (grid-coord->world-coord obj)
+    (draw-textured-object texture color char
+                          x y w h)))
+
 (define-method (render (w wall))
-  (draw-textured-object wall 'pink 'wall
-                        (wall-x w) (wall-y w) (wall-width w) (wall-height w)))
+  (render-object w wall 'pink 'wall))
 
 (define-method (render (g gold))
-  (draw-textured-object gold 'regular 'gold
-                        (game-object-x g) (game-object-y g)
-                        (game-object-width g) (game-object-height g)))
+  (render-object g gold 'regular 'gold))
 
-(define-method (render (w poly-wall))
-  (draw-textured-triangles wall 'pink 'wall (poly-wall-points w)))
+(define-method (render (hb handbar))
+  (render-object hb handbar 'regular 'bar))
+
+(define-method (render (p player))
+  (render-object p player (player-direction p) (player-state p)))
+
+(define-method (render (l ladder))
+  (render-object l ladder 'regular 'ladder))

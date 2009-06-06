@@ -6,7 +6,7 @@ SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
 GL_FILES = opengl.scm glu.scm
 FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
 IMAGE_FILE = user-interface-images.scm 
-ENGINE_FILES = game-engine.scm
+ENGINE_FILES = game-engine.scm level-loader.scm
 UI_FILES = sdl-interface.scm user-interface.scm 
 
 DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE)
@@ -73,7 +73,8 @@ run-game: $(GAME_FILES:.scm=.o1)
 
 user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
 user-interface.o1: scm-lib-macro.scm opengl-header.scm
-game-engine.o1: scm-lib-macro.scm class.scm 
+game-engine.o1 game-engine.scm: scm-lib-macro.scm class.scm
+level-loader.o1 level-loader.scm: class_.scm
 opengl.o1: opengl-header.scm
 glu.o1: glu-header.scm
 
@@ -81,9 +82,11 @@ glu.o1: glu-header.scm
 ### External Scheme library dependencies
 
 ## Object system
-IMPORTED-FILES = class.scm
+IMPORTED-FILES = class.scm class_.scm
 class.scm: $(OOSYSYEM_PATH)/class.scm
 	cp $(OOSYSYEM_PATH)/class.scm .
+class_.scm: $(OOSYSYEM_PATH)/class_.scm
+	cp $(OOSYSYEM_PATH)/class_.scm .
 
 ## Scheme basic block library
 IMPORTED-FILES += scm-lib.scm scm-lib-macro.scm

@@ -153,9 +153,9 @@
 (define (redraw-loop)
   (SDL::set-window-caption "Space Invaders" "Space Invaders")
   (SDL::set-window-icon (SDL::load-bmp-file "sprites/lode-runner-icon.bmp") #f)
-  (let ( (screen (SDL::set-video-mode
-                  screen-max-x screen-max-y 32
-                  (bitwise-ior  SDL::opengl SDL::resizable))) )
+  (let ((screen (SDL::set-video-mode
+                 screen-max-x screen-max-y 32
+                 (bitwise-ior  SDL::opengl SDL::resizable))) )
       (if screen
           (call/cc
            (lambda (k)
@@ -169,14 +169,15 @@
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
              ;; main loop with framerate calculation
-             (let loop ((render-init-time (time->seconds (current-time))))
+             (let loop ((render-init-time (time->seconds (current-time)))
+                        (objects (load-level "data/level1.scm")))
                (if exit-requested? (quit))
-               (let ((objects (advance-frame!)))
-                 (render-scene screen objects))
+               (render-scene screen objects)
                (let* ((now (time->seconds (current-time)))
                       (this-fps (floor (/ 1 (- now render-init-time)))))
                  (FPS this-fps))
-               (loop (time->seconds (current-time))))))
+               (loop (time->seconds (current-time))
+                     objects))))
           (display "Could not set SDL screen")))
   )
 
