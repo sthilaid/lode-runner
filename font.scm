@@ -236,7 +236,3 @@
 (define (draw-textured-object font color char x y width height)
   (let ((texture-obj (find-font-texture font color char)))
     (draw-texture texture-obj x y width: width height: height)))
-
-(define (draw-textured-triangles font color char points)
-  (let ((texture-obj (find-font-texture font color char)))
-    (draw-triangles texture-obj points)))
