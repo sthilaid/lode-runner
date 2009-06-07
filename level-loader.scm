@@ -145,5 +145,10 @@
                     (loop i (+ j 1) (cons object acc))
                     (loop i (+ j 1) acc)))
               (loop (+ i 1) 0 acc))
-          acc))))
+          (let ((grid (make-grid)))
+            (for-each (lambda (obj) (grid-update grid obj)) acc)
+            (new level
+                 (path-strip-directory (path-strip-extension filename))
+                 grid
+                 acc))))))
 

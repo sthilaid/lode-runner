@@ -63,12 +63,10 @@
         (modifiers (SDL::key-modifiers evt-struct))
         (unicode   (SDL::key-unicode   evt-struct)))
     (case key-enum
-      [(key-left-arrow)   (key-down-table-add!
-                           'left
-                           (lambda () 'todo))]
-      [(key-right-arrow)  (key-down-table-add!
-                           'right
-                           (lambda () 'todo))]
+      [(key-left-arrow)   (key-down-table-add! 'left
+                                               (lambda () 'todo))]
+      [(key-right-arrow)  (key-down-table-add! 'right
+                                               (lambda () 'todo))]
 
       [(key-f)            (set! display-fps? (not display-fps?))]
       [(key-q)            (request-exit)])
@@ -114,6 +112,8 @@
   (table-set! key-down-table key))
 (define (key-down-table-actions)
   (map cdr (table->list key-down-table)))
+(define (key-down-table-keys)
+  (map car (table->list key-down-table)))
 
 (define (event-thread-thunk)
   (let ((evt-struct (SDL::malloc-event-struct)))
@@ -170,14 +170,15 @@
              (start-threads!)
              ;; main loop with framerate calculation
              (let loop ((render-init-time (time->seconds (current-time)))
-                        (objects (load-level "data/level1.scm")))
+                        (level (load-level "data/level1.scm")))
                (if exit-requested? (quit))
-               (render-scene screen objects)
+               (advance-frame! level (key-down-table-keys))
+               (render-scene screen (level-objects level))
                (let* ((now (time->seconds (current-time)))
                       (this-fps (floor (/ 1 (- now render-init-time)))))
                  (FPS this-fps))
                (loop (time->seconds (current-time))
-                     objects))))
+                     level))))
           (display "Could not set SDL screen")))
   )
 

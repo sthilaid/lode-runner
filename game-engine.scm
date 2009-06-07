@@ -147,25 +147,27 @@
 
 (define-class robot (game-object moving statefull)
   (constructor: (lambda (self x0 y0 initial-velocity)
-                  ;;(change-state! self 'standing)
+                  (init! cast: '(game-object * * * * *)
+                         self (gensym 'robot) x0 y0 2 3)
                   (set-fields! self player
-                    ((x x0)
-                     (y y0)
-                     (width  2)
-                     (height 3)
-                     (state 'standing-up)
+                    ((state 'standing-up)
                      (velocity initial-velocity))))))
 
 (define-class player (game-object moving statefull)
   (constructor: (lambda (self x0 y0 initial-velocity)
                   ;;(change-state! self 'standing)
+                  (init! cast: '(game-object * * * * *)
+                         self 'player x0 y0 2 3)
                   (set-fields! self player
-                    ((x x0)
-                     (y y0)
-                     (width  2)
-                     (height 3)
-                     (state 'standing-up)
+                    ((state 'standing-up)
                      (velocity initial-velocity))))))
+
+
+(define-class level ()
+  (slot: name)
+  (slot: grid)
+  (slot: objects))
+
 
 (define (player-direction p)
   (if (< (player-velocity p) 0) 'left 'right))
@@ -196,17 +198,39 @@
           (game-object-grid-cells obj1)
           (game-object-grid-cells obj2)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Movement
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (move! obj)
+  'todo)
 
 
-(define tests (list ;(new wall 10 10 50 50)
-                    (new gold 2 2)
-                    (new wall 30 10 5 5)
-                    (new player 20 20 -3)
-                    (new ladder 30 0 9)
-                    (new handbar 0 25 10)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Frame update (game loop)
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (advance-frame!)
-  tests)
+
+(define (process-key key-sym)
+  ;; the keysym are defined in the user-interface module
+  (case key-sym
+    [(left) 'todo]
+    [(right) 'todo]))
+
+(define (advance-frame! level keys)
+  (for-each process-key keys))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Object rendering
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 (define-generic render)
 

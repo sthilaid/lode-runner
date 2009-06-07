@@ -5,9 +5,9 @@ SOUND_FILES = $(wildcard sounds/*.wav)
 SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
 GL_FILES = opengl.scm glu.scm
 FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
-IMAGE_FILE = user-interface-images.scm 
+IMAGE_FILE = user-interface-images.scm
 ENGINE_FILES = game-engine.scm level-loader.scm
-UI_FILES = sdl-interface.scm user-interface.scm 
+UI_FILES = sdl-interface.scm user-interface.scm
 
 DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE)
 GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE) $(ENGINE_FILES) $(UI_FILES)
