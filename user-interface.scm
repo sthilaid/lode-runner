@@ -4,6 +4,7 @@
 (define screen-max-x 388)
 (define screen-max-y 280)
 (define sdl-screen #f)
+(define fullscreen-mode? #f)
 (define event-thread #f)
 (define display-fps? #f)
 (define FPS (create-bounded-simple-moving-avg 10))
@@ -39,7 +40,8 @@
           'white))
 
      (glFlush)
-     (SDL::GL::SwapBuffers))))
+     ;;(SDL::GL::SwapBuffers)
+     )))
 
 (define (reshape w h)
   (let* ((zoom-x (/ w screen-max-x))
@@ -69,6 +71,8 @@
                                                (lambda () 'todo))]
 
       [(key-f)            (set! display-fps? (not display-fps?))]
+      [(key-l)            (set! fullscreen-mode? (not fullscreen-mode?))
+       (pp fullscreen-mode?)]
       [(key-q)            (request-exit)])
     ))
 
@@ -83,10 +87,20 @@
 (define (->quit evt-struct)
   (request-exit))
 
+
+(define (get-video-flags)
+  (bitwise-ior SDL::opengl
+               SDL::resizable
+               ;;(if fullscreen-mode? SDL::fullscreen 0)
+               ))
+
+
 (define (->video-resize evt-struct)
   (let ((w (SDL::resize-w evt-struct))
         (h (SDL::resize-h evt-struct)))
-    (SDL::set-video-mode w h 32 (bitwise-ior SDL::opengl SDL::resizable))
+    (SDL::gl-set-attributes SDL::gl-swap-control 0)
+    (SDL::gl-set-attributes SDL::gl-doublebuffer 0)
+    (SDL::set-video-mode w h 32 (get-video-flags))
     (init-GL w h)
     ))
 
@@ -138,8 +152,6 @@
   (glEnable GL_BLEND)
   (glBlendFunc GL_SRC_ALPHA GL_ONE)
 
-  (for-each (lambda (f) (f)) debug-textures)
-
   (reshape w h)
   )
 
@@ -153,9 +165,12 @@
 (define (redraw-loop)
   (SDL::set-window-caption "Space Invaders" "Space Invaders")
   (SDL::set-window-icon (SDL::load-bmp-file "sprites/lode-runner-icon.bmp") #f)
-  (let ((screen (SDL::set-video-mode
-                 screen-max-x screen-max-y 32
-                 (bitwise-ior  SDL::opengl SDL::resizable))) )
+
+  (SDL::gl-set-attributes SDL::gl-swap-control 0)
+  (SDL::gl-set-attributes SDL::gl-doublebuffer 0)
+  
+  (let ((screen (SDL::set-video-mode screen-max-x screen-max-y 32
+                                     (get-video-flags))))
       (if screen
           (call/cc
            (lambda (k)
@@ -166,6 +181,10 @@
                      (thread-terminate! event-thread)
                      ;;(thread-terminate! simulation-thread)
                      (k ret-val)))
+
+             ;; initialize textures! (after opengl was enabled
+             (for-each (lambda (f) (f)) debug-textures)
+
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
              ;; main loop with framerate calculation
