@@ -39,8 +39,8 @@
           (with-output-to-string "" (lambda () (show "FPS: " (FPS))))
           'white))
 
-     (glFlush)
-     ;;(SDL::GL::SwapBuffers)
+     ;;(glFlush)
+     (SDL::GL::SwapBuffers)
      )))
 
 (define (reshape w h)
@@ -99,7 +99,7 @@
   (let ((w (SDL::resize-w evt-struct))
         (h (SDL::resize-h evt-struct)))
     (SDL::gl-set-attributes SDL::gl-swap-control 0)
-    (SDL::gl-set-attributes SDL::gl-doublebuffer 0)
+    ;;(SDL::gl-set-attributes SDL::gl-doublebuffer 0)
     (SDL::set-video-mode w h 32 (get-video-flags))
     (init-GL w h)
     ))
@@ -167,7 +167,7 @@
   (SDL::set-window-icon (SDL::load-bmp-file "sprites/lode-runner-icon.bmp") #f)
 
   (SDL::gl-set-attributes SDL::gl-swap-control 0)
-  (SDL::gl-set-attributes SDL::gl-doublebuffer 0)
+  ;;(SDL::gl-set-attributes SDL::gl-doublebuffer 0)
   
   (let ((screen (SDL::set-video-mode screen-max-x screen-max-y 32
                                      (get-video-flags))))
