@@ -51,8 +51,10 @@
 (define (flip f x)
   (lambda (y) (f y x)))
 
-(define (curry-flip f)
-  (lambda (x) (lambda (y) ((f y) x))))
+(define (curry-flip f x)
+  (lambda (y) ((f y) x)))
+
+(define (identity x) x)
 
 ;;;;;;;;;;;;;;;;;;;;;;; list operations ;;;;;;;;;;;;;;;;;;;;;;;;;;
 

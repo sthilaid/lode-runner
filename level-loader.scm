@@ -14,7 +14,7 @@
 
 (define (load-player mat i j)
   (let* ((x j) (y i)
-         (player (new player x y 0)))
+         (player (new player x y (new point 0 0))))
     (for-each (lambda (cell)
                 (let ((x (grid-cell-i cell))
                       (y (grid-cell-j cell)))
@@ -150,5 +150,5 @@
             (new level
                  (path-strip-directory (path-strip-extension filename))
                  grid
-                 acc))))))
-
+                 acc
+                 (make-table test: eq?)))))))

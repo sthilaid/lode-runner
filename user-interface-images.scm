@@ -1,18 +1,36 @@
 (include "declarations.scm")
-(include "opengl-header.scm")
-(include "texture-macro.scm")
-(include "font-macro.scm")
+;; (include "opengl-header.scm")
+;; (include "texture-macro.scm")
+;; (include "font-macro.scm")
 
 ;; Stage objects
 
-(define-symmetric-font "wall" 8 8 loop-x loop-y)
-(define-symmetric-font "ladder" 16 16 loop-y)
-(define-symmetric-font "handbar" 8 8 loop-x)
+;; (define-symmetric-font "wall" 8 8 loop-x loop-y)
+;; (define-symmetric-font "ladder" 16 16 loop-y)
+;; (define-symmetric-font "handbar" 8 8 loop-x)
 
-;; Main game objects
+;; ;; Main game objects
 
-(define-symmetric-font "gold" 16 16)
-(define-symmetric-font "player" 16 24)
+;; (define-symmetric-font "gold" 16 16)
+;; (define-symmetric-font "player" 16 24)
 
-;; Font
-(define-symmetric-font "bb_fonts" 8 8 static)
+;; ;; Font
+;; (define-symmetric-font "bb_fonts" 8 8 static)
+
+(define (generate-font-file name)
+  (let* ((font-id (path-strip-directory (path-strip-extension name)))
+         (args (case (string->symbol font-id)
+                 ((wall)     '(8 8 loop-x loop-y))
+                 ((ladder)    '(16 16 loop-y))
+                 ((handbar)  '(8 8 loop-x))
+                 ((gold)     '(16 16))
+                 ((player)   '(16 24))
+                 ((bb_fonts) '(8 8))
+                 (else (error "Error: could not find parameters for the font: " font-id)))))
+   (with-output-to-file (list path: (string-append "generated/font-" font-id ".scm"))
+     (lambda ()
+       (pretty-print `(begin (include "../declarations.scm")
+                             (include "../opengl-header.scm")
+                             (include "../texture-macro.scm")
+                             (include "../font-macro.scm")
+                             (define-symmetric-font ,font-id ,@args)))))))

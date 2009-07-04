@@ -2,11 +2,13 @@
 (include "scm-lib-macro.scm")
 (include "class.scm")
 
+(define player-movement-speed 1)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Geometric Shapes definitions
-;;
+;;;
+;;; Geometric Shapes definitions
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;; Rectangle structure used in collision detection ;;;;
@@ -21,6 +23,13 @@
 (define (point-sub p1 p2) (new point
                                (- (point-x p1) (point-x p2))
                                (- (point-y p1) (point-y p2))))
+;; Dirty versions: modifies the first of the 2 given points with the result
+(define (point-add! p1 p2)
+  (point-x-set! p1 (+ (point-x p1) (point-x p2)))
+  (point-y-set! p1 (+ (point-y p1) (point-y p2))))
+(define (point-sub! p1 p2)
+  (point-x-set! p1 (- (point-x p1) (point-x p2)))
+  (point-y-set! p1 (- (point-y p1) (point-y p2))))
 (define (point-scalar-prod p1 p2)
   (+ (* (point-x p1) (point-x p2)) (* (point-y p1) (point-y p2))))
 (define (point-cartesian-distance p1 p2)
@@ -45,9 +54,9 @@
   (new triangle (car lst) (cadr lst) (caddr lst)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Grid
-;;
+;;;
+;;; Grid
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define grid-width  48)
@@ -88,13 +97,13 @@
           (* (rect-height rect) grid-cell-h)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Game objects
-;;
+;;;
+;;; Game objects
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Abstract classes
+;;; Abstract classes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; (define-class colored ()   (slot: color))
@@ -119,12 +128,8 @@
                   (stage-neighbours-set! self '()))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Leaf Classes (which produce instances)
+;;; Leaf Classes (which produce instances)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; Generic function which changes correctly the states of the
-;; statefull objects
-(define-generic change-state!)
 
 ;; Stage objects
 (define-class wall  (stage)
@@ -154,23 +159,43 @@
                      (velocity initial-velocity))))))
 
 (define-class player (game-object moving statefull)
+  (slot: walk-cycle-state)
   (constructor: (lambda (self x0 y0 initial-velocity)
                   ;;(change-state! self 'standing)
                   (init! cast: '(game-object * * * * *)
                          self 'player x0 y0 2 3)
                   (set-fields! self player
                     ((state 'standing-up)
-                     (velocity initial-velocity))))))
+                     (velocity initial-velocity)
+                     (walk-cycle-state 0))))))
 
 
 (define-class level ()
   (slot: name)
   (slot: grid)
-  (slot: objects))
+  (slot: objects)
+  (slot: obj-cache))
+
+(define (level-cache-add! obj level)
+  (table-set! (level-obj-cache level) (game-object-id obj) obj))
+(define (level-cache-remove! obj level)
+  (table-set! (level-obj-cache level) (game-object-id obj)))
+(define (level-delete! obj lvl)
+  (update! lvl level objects (lambda (objs) (list-remove (lambda (obj) (eq? (game-object-id obj id))) objs)))
+  (level-cache-remove! id level))
+
+(define (level-get id level)
+  (cond ((table-ref (level-obj-cache level) id #f) => identity)
+        ((exists (lambda (obj) (eq? (game-object-id obj) id)) (level-objects level))
+         => (lambda (obj) (begin (level-cache-add! obj level)
+                                 obj)))
+        (else #f)))
 
 
 (define (player-direction p)
-  (if (< (player-velocity p) 0) 'left 'right))
+  (let* ((v (player-velocity p))
+         (dx (point-x v)))
+    (if (< dx 0) 'left 'right)))
 
 (define (get-grid-cells obj)
   (let ((x     (game-object-x  obj))
@@ -188,9 +213,9 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Collision detection
-;;
+;;;
+;;; Collision detection
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (detect-collision obj1 obj2)
@@ -199,36 +224,65 @@
           (game-object-grid-cells obj2)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Movement
-;;
+;;;
+;;; Movement
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (move! obj)
-  'todo)
+(define-generic change-state!)
+
+(define (walk-cycle p)
+  (update! p player walk-cycle-state (lambda (s) (modulo (+ s 1) 4)))
+  (let ((new-state (case (player-walk-cycle-state p)
+                     ((0) 'standing-up)
+                     ((1) 'standing-left)
+                     ((2) 'standing-up)
+                     ((3) 'standing-right))))
+    (player-state-set! p new-state)))
+(define-method (change-state! (p player))
+  (let ((v (moving-velocity p)))
+    (if (zero? (point-y v))
+        (walk-cycle p))))
+
+(define-method (change-state! (obj game-object))
+  'do-nothing)
+
+
+(define-generic move!)
+
+(define-method (move! (obj moving) velocity level)
+  (change-state! obj)
+  (moving-velocity-set! obj velocity)
+  (point-add! obj velocity)
+  (let ((colliding-objects (filter (lambda (other-obj) (detect-collision obj other-obj))
+                                   (level-objects level))))
+    (for-each (lambda (other-obj)
+                (pp `(collision between ,(game-object-id obj) and ,(game-object-id other-obj) occured)))
+              colliding-objects)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Frame update (game loop)
-;;
+;;;
+;;; frame update (game loop)
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(define (process-key key-sym)
+(define (process-key key-sym level)
   ;; the keysym are defined in the user-interface module
-  (case key-sym
-    [(left) 'todo]
-    [(right) 'todo]))
+  (let ((player (level-get 'player level)))
+   (case key-sym
+     [(left)  (move! player (new point (- player-movement-speed) 0) level)]
+     [(right) (move! player (new point player-movement-speed     0) level)])))
 
 (define (advance-frame! level keys)
-  (for-each process-key keys))
+  (for-each (flip process-key level) keys))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Object rendering
-;;
+;;;
+;;; Object rendering
+;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 

@@ -2,15 +2,19 @@ SPRITE_FILES = $(wildcard sprites/*.ppm) $(wildcard sprites/*.bmp)
 FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
 
-SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
-GL_FILES = opengl.scm glu.scm
-FONT_FILES = ppm-reader.scm texture.scm sprite.scm font.scm
-IMAGE_FILE = user-interface-images.scm
-ENGINE_FILES = game-engine.scm level-loader.scm
-UI_FILES = sdl-interface.scm user-interface.scm
+add-presufix = $(foreach f, $(3), $(1)$(f)$(2))
 
-DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE)
-GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILE) $(ENGINE_FILES) $(UI_FILES)
+FONT_IMAGES   = wall ladder handbar gold player bb_fonts
+
+SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
+GL_FILES      = opengl.scm glu.scm
+FONT_FILES    = ppm-reader.scm texture.scm sprite.scm font.scm
+IMAGE_FILES   = $(call add-presufix,generated/font-,.scm,$(FONT_IMAGES))
+ENGINE_FILES  = game-engine.scm level-loader.scm
+UI_FILES      = sdl-interface.scm user-interface.scm
+
+DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES)
+GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES) $(ENGINE_FILES) $(UI_FILES)
 
 ## compilers
 GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug
@@ -69,6 +73,11 @@ run-game: $(GAME_FILES:.scm=.o1)
 	@echo
 	gsi -:dar $(GAME_FILES:.scm=.o1) -e '(main)'
 
+generated/font-%.scm: fonts/%.ppm user-interface-images.scm
+	@echo Generating font scm file $@
+	mkdir -p generated
+	gsi user-interface-images -e "(generate-font-file \"$(<)\")"
+
 ### "included" macro dependant scheme source files
 
 user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
@@ -77,6 +86,8 @@ game-engine.o1 game-engine.scm: scm-lib-macro.scm class.scm class_.scm
 level-loader.o1 level-loader.scm: class_.scm
 opengl.o1: opengl-header.scm
 glu.o1: glu-header.scm
+$(IMAGE_FILES:.scm=.o1): opengl-header.scm texture-macro.scm font-macro.scm
+$(GAME_FILES): declarations.scm
 
 
 ### External Scheme library dependencies
@@ -164,8 +175,9 @@ endif
 ALL_SCM = $(wildcard *.scm)
 clean:
 	rm -f $(ALL_SCM:.scm=.c) *_.c *.o* *.exe *.tar.gz *.tgz *.~*~ *.zip
-  # external libs
 	rm -f $(IMPORTED-FILES)
+	rm -rf generated
+
 #$(MAKE) clean -C doc
 
 # tarball: makefile README $(wildcard *.scm) $(SPRITE_FILES) $(FONT_FILES) $(DOC_FILES) $(SOUND_FILES)

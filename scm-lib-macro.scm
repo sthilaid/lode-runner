@@ -44,9 +44,9 @@
           (loop (- n 1) (cons (thunk) acc))
           acc)))
   (let ((args (create-list arrity gensym)))
-   (fold-l (lambda (acc arg) `(lambda (,arg) ,acc))
-           `(,f ,@args)
-           args)))
+    (fold-l (lambda (acc arg) `(lambda (,arg) ,acc))
+            `(,f ,@args)
+            args)))
 
 
 (define-macro (cast-pointer in-type out-type value)
