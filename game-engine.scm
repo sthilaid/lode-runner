@@ -2,7 +2,7 @@
 (include "scm-lib-macro.scm")
 (include "class.scm")
 
-(define player-movement-speed 1)
+(define player-movement-speed 0.3)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -150,24 +150,28 @@
   (constructor: (lambda (self x y) (init! cast: '(game-object * * * * *)
                                           self (gensym 'gold) x y 2 2))))
 
-(define-class robot (game-object moving statefull)
-  (constructor: (lambda (self x0 y0 initial-velocity)
-                  (init! cast: '(game-object * * * * *)
-                         self (gensym 'robot) x0 y0 2 3)
-                  (set-fields! self player
-                    ((state 'standing-up)
-                     (velocity initial-velocity))))))
-
-(define-class player (game-object moving statefull)
+(define-class human-like (game-object moving statefull)
+  (slot: facing-direction)
   (slot: walk-cycle-state)
-  (constructor: (lambda (self x0 y0 initial-velocity)
-                  ;;(change-state! self 'standing)
+  (constructor: (lambda (self x0 y0 initial-velocity id)
                   (init! cast: '(game-object * * * * *)
-                         self 'player x0 y0 2 3)
-                  (set-fields! self player
+                         self id x0 y0 2 3)
+                  (set-fields! self human-like
                     ((state 'standing-up)
                      (velocity initial-velocity)
+                     (facing-direction 'right)
                      (walk-cycle-state 0))))))
+
+(define-class robot (human-like)
+  (constructor: (lambda (self x0 y0 initial-velocity)
+                  (init! cast: '(human-like * * * *)
+                         self x0 y0 initial-velocity (gensym 'robot)))))
+
+(define-class player (human-like)
+  (slot: walk-cycle-state)
+  (constructor: (lambda (self x0 y0 initial-velocity)
+                  (init! cast: '(human-like * * * *)
+                         self x0 y0 initial-velocity 'player))))
 
 
 (define-class level ()
@@ -191,11 +195,6 @@
                                  obj)))
         (else #f)))
 
-
-(define (player-direction p)
-  (let* ((v (player-velocity p))
-         (dx (point-x v)))
-    (if (< dx 0) 'left 'right)))
 
 (define (get-grid-cells obj)
   (let ((x     (game-object-x  obj))
@@ -232,17 +231,21 @@
 (define-generic change-state!)
 
 (define (walk-cycle p)
-  (update! p player walk-cycle-state (lambda (s) (modulo (+ s 1) 4)))
-  (let ((new-state (case (player-walk-cycle-state p)
+  (define cycle-length 20)
+  (define cycling-delta 5)
+  (update! p player walk-cycle-state
+           (lambda (s) (modulo (+ s 1) cycle-length)))
+  (let ((new-state (case (quotient (player-walk-cycle-state p) cycling-delta)
                      ((0) 'standing-up)
                      ((1) 'standing-left)
                      ((2) 'standing-up)
-                     ((3) 'standing-right))))
+                     ((3) 'standing-right)
+                     (else (error "Invalid player walk cycle state")))))
     (player-state-set! p new-state)))
 (define-method (change-state! (p player))
   (let ((v (moving-velocity p)))
-    (if (zero? (point-y v))
-        (walk-cycle p))))
+    (cond ((zero? (point-y v)) (walk-cycle p))
+          )))
 
 (define-method (change-state! (obj game-object))
   'do-nothing)
@@ -250,14 +253,24 @@
 
 (define-generic move!)
 
+(define-method (move! (obj human-like) velocity level)
+  (define (get-direction velocity)
+    (if (< (point-x velocity) 0) 'left 'right))
+  (human-like-facing-direction-set! obj (get-direction velocity))
+  (call-next-method)
+  ;;(move! cast: '(moving * *) obj velocity level)
+  )
+
 (define-method (move! (obj moving) velocity level)
   (change-state! obj)
   (moving-velocity-set! obj velocity)
   (point-add! obj velocity)
-  (let ((colliding-objects (filter (lambda (other-obj) (detect-collision obj other-obj))
-                                   (level-objects level))))
+  (let ((colliding-objects
+         (filter (lambda (other-obj) (detect-collision obj other-obj))
+                 (level-objects level))))
     (for-each (lambda (other-obj)
-                (pp `(collision between ,(game-object-id obj) and ,(game-object-id other-obj) occured)))
+                (pp `(collision between ,(game-object-id obj)
+                                and     ,(game-object-id other-obj) occured)))
               colliding-objects)))
 
 
@@ -290,8 +303,7 @@
 
 (define (render-object obj texture color char)
   (receive (x y w h) (grid-coord->world-coord obj)
-    (draw-textured-object texture color char
-                          x y w h)))
+    (draw-textured-object texture color char x y w h)))
 
 (define-method (render (w wall))
   (render-object w wall 'pink 'wall))
@@ -303,7 +315,7 @@
   (render-object hb handbar 'regular 'bar))
 
 (define-method (render (p player))
-  (render-object p player (player-direction p) (player-state p)))
+  (render-object p player (player-facing-direction p) (player-state p)))
 
 (define-method (render (l ladder))
   (render-object l ladder 'regular 'ladder))
