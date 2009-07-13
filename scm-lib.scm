@@ -259,6 +259,11 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;; Math stuff ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define (fixnum->flonum x)
+  (cond ((##fixnum? x) (##fixnum->flonum x))
+        ((flonum?   x) x)
+        (else       (error "Cannot convert number to flonum: " x))))
+
 (define (1+ x) (+ x 1))
 (define (1- x) (- x 1))
 (define (one? x) (eq? x 1))
