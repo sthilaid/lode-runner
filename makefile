@@ -12,9 +12,10 @@ FONT_FILES    = ppm-reader.scm texture.scm sprite.scm font.scm
 IMAGE_FILES   = $(call add-presufix,generated/font-,.scm,$(FONT_IMAGES))
 ENGINE_FILES  = game-engine.scm level-loader.scm
 UI_FILES      = sdl-interface.scm user-interface.scm
+PROFILING_FILES = statprof.scm
 
-DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES)
-GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES) $(ENGINE_FILES) $(UI_FILES)
+DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES) $(PROFILING_FILES)
+GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES) $(ENGINE_FILES) $(UI_FILES) $(PROFILING_FILES)
 
 ## compilers
 GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug
