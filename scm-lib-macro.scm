@@ -33,6 +33,14 @@
 (define-macro (unless test . body)
   `(if ,test #!void (begin ,@body)))
 
+(define-macro (xor arg1 arg2)
+  (let ((v1 (gensym 'v1))
+        (v2 (gensym 'v2)))
+   `(let ((,v1 ,arg1)
+          (,v2 ,arg2))
+      (or (and ,v1 ,v2)
+          (and (not ,v1) (not ,v2))))))
+
 (define-macro (currify f arrity)
   (define (fold-l f acc list)
     (if (not (pair? list))
@@ -54,38 +62,3 @@
               "___result_voidstar = ___arg1;\n")
     ,value))
 
-;; (define-macro (make-vector2d height width . init-val)
-;;   (let ((vector-sym (gensym 'vector-sym))
-;;         (row-sym (gensym 'row-sym)))
-;;     `(let ((,vector-sym (make-vector ,height #f)))
-;;        (for ,row-sym 0 (< ,row-sym ,height)
-;;             (vector-set! ,vector-sym ,row-sym
-;;                          (make-vector ,width ,(if (pair? init-val)
-;;                                                   (car init-val)
-;;                                                   #f))))
-;;        ,vector-sym)))
-
-;; (define-macro (vector2d-ref vector row col)
-;;   `(vector-ref (vector-ref ,vector ,row) ,col))
-
-;; (define-macro (vector2d-set! vector row col val)
-;;   `(vector-set! (vector-ref ,vector ,row) ,col ,val))
-
-;; (define-macro (make-vector3d i-length j-length k-length . init-val)
-;;   (let ((vector-sym (gensym 'vector-sym))
-;;         (i-sym (gensym 'i-sym))
-;;         (j-sym (gensym 'j-sym)))
-;;     `(let ((,vector-sym (make-vector2d ,i-length ,j-length #f)))
-;;        (for ,i-sym 0 (< ,i-sym ,i-length)
-;;             (for ,j-sym 0 (< ,j-sym ,j-length)
-;;                  (vector2d-set! ,vector-sym ,i-sym ,j-sym
-;;                                 (make-vector ,k-length ,(if (pair? init-val)
-;;                                                             (car init-val)
-;;                                                             #f)))))
-;;        ,vector-sym)))
-
-;; (define-macro (vector3d-ref vector i j k)
-;;   `(vector-ref (vector2d-ref ,vector ,i ,j) ,k))
-
-;; (define-macro (vector3d-set! vector i j k val)
-;;   `(vector-set! (vector2d-ref ,vector ,i ,j) ,k ,val))

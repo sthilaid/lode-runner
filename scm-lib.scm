@@ -112,7 +112,8 @@
 
 (define (exists pred list . lists)
   (cond
-   ((not (pair? list)) #f)
+   ((or (not (pair? list))
+        (pair? (filter null? lists))) #f)
    ((apply pred (car list) (map car lists))
     (apply values (car list) (map car lists)))
    (else  (apply exists pred (cdr list) (map cdr lists)))))
