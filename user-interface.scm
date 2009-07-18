@@ -7,7 +7,6 @@
 (define fullscreen-mode? #f)
 (define event-thread #f)
 (define display-fps? #f)
-(define FPS (create-bounded-simple-moving-avg 10))
 
 (define (render-string x y str color)
   (if (not (eq? color 'black))
@@ -22,7 +21,7 @@
   (if (not (eq? color 'black))
       (draw-char sprite-font color state x y 0)))
 
-(define (render-scene sdl-screen objects)
+(define (render-scene sdl-screen level)
   (SDL::with-locked-surface
    sdl-screen
    (lambda ()
@@ -30,7 +29,7 @@
      (glClear GL_COLOR_BUFFER_BIT)
 
      ;; Draw background stuff
-     (for-each render objects)
+     (render level)
 
      ;;draw frame-rate just over the green line
      (if display-fps?
@@ -69,7 +68,10 @@
                                                (lambda () 'todo))]
       [(key-right-arrow)  (key-down-table-add! 'right
                                                (lambda () 'todo))]
-
+      [(key-up-arrow)     (key-down-table-add! 'up
+                                               (lambda () 'todo))]
+      [(key-down-arrow)   (key-down-table-add! 'down
+                                               (lambda () 'todo))]
       [(key-f)            (set! display-fps? (not display-fps?))]
       [(key-l)            (set! fullscreen-mode? (not fullscreen-mode?))
        (pp fullscreen-mode?)]
@@ -81,7 +83,9 @@
         (modifiers (SDL::key-modifiers evt-struct)))
     (case key-enum
       [(key-left-arrow)   (key-down-table-reset-key 'left)]
-      [(key-right-arrow)  (key-down-table-reset-key 'right)])
+      [(key-right-arrow)  (key-down-table-reset-key 'right)]
+      [(key-up-arrow)     (key-down-table-reset-key 'up)]
+      [(key-down-arrow)   (key-down-table-reset-key 'down)])
     ))
 
 (define (->quit evt-struct)
@@ -155,11 +159,14 @@
   (reshape w h)
   )
 
+(define debug-current-level #f)
+
 (define (start-threads!)
   ;;(set! simulation-thread (make-thread (game-loop (current-thread))))
   (set! event-thread      (make-thread event-thread-thunk))
   ;;(thread-start! simulation-thread)
   (thread-start! event-thread)
+  (thread-start! (make-thread (lambda () (##repl)) 'repl))
   )
 
 (define (redraw-loop)
@@ -190,9 +197,10 @@
              ;; main loop with framerate calculation
              (let loop ((render-init-time (time->seconds (current-time)))
                         (level (load-level "data/level1.scm")))
+               (set! debug-current-level level)
                (if exit-requested? (quit))
                (advance-frame! level (key-down-table-keys))
-               (render-scene screen (level-objects level))
+               (render-scene screen level)
                (let* ((now (time->seconds (current-time)))
                       (this-fps (floor (/ 1 (- now render-init-time)))))
                  (FPS this-fps))
@@ -205,9 +213,14 @@
   (set! exit-requested? #t))
 (define exit-requested? #f)
 (define return #f)
-(define (quit) (pp `(average frame-rate: ,(FPS))) (return 0))
+(define (quit)
+  (profile-stop!)
+  (write-profile-report "profiling-report")
+  (pp `(average frame-rate: ,(FPS)))
+  (return 0))
 
 ;; Main function which only sets up and starts the game threads
 (define (main)
+  (profile-start!)
   (SDL::within-sdl-lifetime SDL::init-everything
                             redraw-loop))
