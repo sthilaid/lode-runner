@@ -1,5 +1,9 @@
 (include "class_.scm")
 
+;; not exactly the same as the game grid-with/height
+(define loaded-level-grid-width  48)
+(define loaded-level-grid-height 31)
+
 (define dummy-load-id          -1)
 (define clear-load-id           0)
 (define brick-load-id           1)
@@ -44,14 +48,14 @@
 
 (define (get-row-width mat x y type-id)
   (let loop ((x (+ x 1)) (w 1))
-    (if (and (< x grid-width)
+    (if (and (< x loaded-level-grid-width)
              (= (matrix2d-get mat y x) type-id))
         (loop (+ x 1) (+ w 1))
         w)))
 
 (define (get-col-height mat x y type-id)
   (let loop ((y (+ y 1)) (h 1))
-    (if (and (< y grid-height)
+    (if (and (< y loaded-level-grid-height)
              (= (matrix2d-get mat y x) type-id))
         (loop (+ y 1) (+ h 1))
         h)))
@@ -91,12 +95,12 @@
          (real-size
           (if (< h w)
               (let loop ((y (+ y 1)) (h 1))
-                (if (and (< y grid-height)
+                (if (and (< y loaded-level-grid-height)
                          (complete-wall-col? x y w))
                     (loop (+ y 1) (+ h 1))
                     (cons w h)))
               (let loop ((x (+ x 1)) (w 1))
-                (if (and (< x grid-width)
+                (if (and (< x loaded-level-grid-width)
                          (complete-wall-row? x y h))
                     (loop (+ x 1) (+ w 1))
                     (cons w h)))))
@@ -119,7 +123,7 @@
                                      (string->number (list->string (list char))))
                                    (read-all p read-char)))))
                (reverse lines)))
-         (mat (make-matrix2d grid-height grid-width)))
+         (mat (make-matrix2d loaded-level-grid-height loaded-level-grid-width)))
 
     ;; fill up the matrix
     (for-each-with-index (lambda (i row)
@@ -128,28 +132,37 @@
                                                 row))
                          num-lines)
     (let loop ((i 0) (j 0) (acc '()))
-      (if (< i grid-height)
-          (if (< j grid-width)
+      (if (< i loaded-level-grid-height)
+          (if (< j loaded-level-grid-width)
               (let* ((id (matrix2d-get mat i j))
                      (object
                       (and id
                            (cond
-                            ((= id player-load-id) (load-player mat i j))
-                            ((= id gold-load-id) (load-gold mat i j))
-                            ((= id robot-load-id) (load-robot mat i j))
+                            ((= id player-load-id)  (load-player mat i j))
+                            ((= id gold-load-id)    (load-gold mat i j))
+                            ((= id robot-load-id)   (load-robot mat i j))
                             ((= id handbar-load-id) (load-handbar mat i j))
-                            ((= id ladder-load-id) (load-ladder mat i j))
-                            ((= id brick-load-id) (load-wall mat i j))
+                            ((= id ladder-load-id)  (load-ladder mat i j))
+                            ((= id brick-load-id)   (load-wall mat i j))
                             (else #f)))))
                 (if object
                     (loop i (+ j 1) (cons object acc))
                     (loop i (+ j 1) acc)))
               (loop (+ i 1) 0 acc))
-          (let ((grid (make-grid)))
-            (for-each (lambda (obj) (grid-update grid obj))
+          (let* ((grid (make-grid))
+                 (bottom-wall (new wall 0 0 grid-width 1))
+                 (all-objects (cons bottom-wall acc)))
+            ;; move up by one all the objects to leave
+            ;; room for the bottom wall
+            (for-each (lambda (obj)
+                        (update! obj game-object y (lambda (y) (+ y 1))))
                       acc)
-            (new level
-                 (path-strip-directory (path-strip-extension filename))
-                 grid
-                 acc
-                 (make-table test: eq?)))))))
+            (for-each (lambda (obj) (grid-update grid obj))
+                      all-objects)
+            (new level 
+                 (path-strip-directory (path-strip-extension filename)) ; name
+                 grid                   ; grid
+                 all-objects            ; objects
+                 (make-table test: eq?) ; obj-cache
+                 0                      ; score
+                 ))))))

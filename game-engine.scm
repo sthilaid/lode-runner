@@ -67,8 +67,11 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; The grid height should be 31, but we added a bottom wall below the
+;; level, to avoid having a special case when the player falls to the
+;; bottom of the level. The row of y = 0 won't be displayed...
 (define grid-width  48)
-(define grid-height 31)
+(define grid-height 32) 
 (define grid-cell-w 8)
 (define grid-cell-h 8)
 
@@ -108,19 +111,51 @@
     (game-object-grid-cells-set! obj new-grid-cells)))
 
 (define (grid-coord->world-coord rect)
-  ;; draw objects aligned in y to the grid!
-  (let* ((y (point-y rect))
-         (sqr-y (if (flonum? y) (##flonum->fixnum y) y)))
-    (values (* (point-x rect)     grid-cell-w)
-            (* sqr-y              grid-cell-h)
-            (* (rect-width rect)  grid-cell-w)
-            (* (rect-height rect) grid-cell-h))))
+  ;; objects are dropped down one level such that the bottom wall
+  ;; doesn't get shown (see level-loader).
+  (values (* (point-x rect)       grid-cell-w)
+          (* (- (point-y rect) 1) grid-cell-h)
+          (* (rect-width rect)    grid-cell-w)
+          (* (rect-height rect)   grid-cell-h)))
 
 (define (validate-grid-bounds! obj)
   (update! obj rect x
            (lambda (x) (max 0 (min (- grid-width  (rect-width  obj)) x))))
   (update! obj rect y
            (lambda (y) (max 0 (min (- grid-height (rect-height obj)) y)))))
+
+
+
+(define (get-grid-cells-at x-min x x-max y-min y y-max)
+  (let loop ((w 0) (h 0) (cells '()))
+      (if (< (+ y-min h) y-max)
+          (if (< (+ x-min w) x-max)
+              (loop (+ w 1) h (cons (make-grid-cell (+ x-min w) (+ y-min h))
+                                    cells))
+              (loop 0 (+ h 1) cells))
+          cells)))
+
+(define (get-grid-cells obj)
+  (let* ((x     (rect-x  obj))
+         (y     (rect-y  obj))
+         (w-max (rect-width  obj))
+         (h-max (rect-height obj))
+         (x-min (if (flonum? x) (##flonum->fixnum x) x))
+         (y-min (if (flonum? y) (##flonum->fixnum y) y))
+         (x-max (+ x w-max))
+         (y-max (+ y h-max)))
+    (get-grid-cells-at x-min x x-max y-min y y-max)))
+
+(define (get-grid-cells-below obj)
+  (let* ((x     (rect-x  obj))
+         (w-max (rect-width  obj))
+         (x-min (if (flonum? x) (##flonum->fixnum x) x))
+         (x-max (+ x w-max))
+         (y     (- (rect-y  obj) 1))
+         (y-min (if (flonum? y) (##flonum->fixnum y) y))
+         (y-max (+ y-min 1)))
+    (get-grid-cells-at x-min x x-max y-min y y-max)))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -229,7 +264,8 @@
   (slot: name)
   (slot: grid)
   (slot: objects)
-  (slot: obj-cache))
+  (slot: obj-cache)
+  (slot: score))
 
 (define (level-cache-add! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj) obj))
@@ -248,37 +284,6 @@
          => (lambda (obj) (begin (level-cache-add! obj level)
                                  obj)))
         (else #f)))
-
-
-(define (get-grid-cells-at x-min x x-max y-min y y-max)
-  (let loop ((w 0) (h 0) (cells '()))
-      (if (< (+ y-min h) y-max)
-          (if (< (+ x-min w) x-max)
-              (loop (+ w 1) h (cons (make-grid-cell (+ x-min w) (+ y-min h))
-                                    cells))
-              (loop 0 (+ h 1) cells))
-          cells)))
-
-(define (get-grid-cells obj)
-  (let* ((x     (rect-x  obj))
-         (y     (rect-y  obj))
-         (w-max (rect-width  obj))
-         (h-max (rect-height obj))
-         (x-min (if (flonum? x) (##flonum->fixnum x) x))
-         (y-min (if (flonum? y) (##flonum->fixnum y) y))
-         (x-max (+ x w-max))
-         (y-max (+ y h-max)))
-    (get-grid-cells-at x-min x x-max y-min y y-max)))
-
-(define (get-grid-cells-below obj)
-  (let* ((x     (rect-x  obj))
-         (w-max (rect-width  obj))
-         (x-min (if (flonum? x) (##flonum->fixnum x) x))
-         (x-max (+ x w-max))
-         (y     (- (rect-y  obj) 1))
-         (y-min (if (flonum? y) (##flonum->fixnum y) y))
-         (y-max (+ y-min 1)))
-    (get-grid-cells-at x-min x x-max y-min y y-max)))
 
 (define (get-objects-below obj level)
   (fold-l (curry2* set-union eq?)
@@ -319,7 +324,37 @@
 
 (define-generic resolve-collision)
 
-(define-method (resolve-collision x y)
+(define-method (resolve-collision (l ladder) (h human-like) level k)
+  (human-like-can-climb-up?-set! h (ladder-x l)))
+(define-method (resolve-collision (h human-like) (l ladder) level k)
+  (resolve-collision l h level k))
+
+(define-method (resolve-collision (h human-like) (w wall) level k)
+  (let* ((velo (human-like-velocity h))
+         (vx (point-x velo))
+         (vy (point-y velo)))
+    (cond
+     ((not (zero? vx))
+      (let* ((h.x (human-like-x h))
+             (h.w (human-like-width h))
+             (w.x (wall-x w))
+             (w.w (wall-width w))
+             (original-direction (get-direction velo))
+             (new-velo (new point (if (< vx 0)
+                                      (+ w.x w.w (- h.x))
+                                      (- (+ h.x h.w (- w.x))))
+                            0)))
+        (human-like-can-walk?-set! h #t)
+        (human-like-velocity-set! h new-velo)
+        (move! h level
+               (lambda (r)
+                 (human-like-facing-direction-set! h original-direction)
+                 (k r)))))
+        )))
+(define-method (resolve-collision (w wall) (h human-like) level k)
+  (resolve-collision h w level))
+
+(define-method (resolve-collision x y lvl k)
   'todo)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -387,6 +422,7 @@
 
 ;;; Movement implementation
 
+;; (move! obj level k) where k is the continuation of the move! call
 (define-generic move!)
 
 ;; may change the velocity if the object is falling
@@ -413,37 +449,57 @@
       (human-like-velocity-set! hum point-zero)
       #f))))
 
-(define-method (move! (obj human-like) level)
-  (let* ((velocity (moving-velocity obj))
-         (speed-correction   (if (eq? (FPS) 'N/A) 1. (/ 60. (FPS))))
-         (effective-velocity (point-scalar-mult velocity speed-correction)))
-    (if (and (not (point-zero? effective-velocity))
+(define-method (move! (obj human-like) level k)
+  (let* ((velocity (moving-velocity obj)))
+    (if (and (not (point-zero? velocity))
              (allowed-to-move!? obj))
         ;; the allowed-to-move!? might have changed the velocity!
         (let ((modified-velocity (moving-velocity obj)))
           (change-state! obj)
           (point-add! obj modified-velocity)
+          (pp `(player moved to (,(point-x obj) ,(point-y obj))
+                       with velocity: (,(point-x modified-velocity)
+                                       ,(point-y modified-velocity))))
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
+          (pp `(after validation (,(point-x obj) ,(point-y obj))))
           (grid-update (level-grid level) obj)
-          (let ((colliding-objects (detect-collisions obj level))
-                (objects-below     (get-objects-below obj level)))
-            (for-each (curry2 resolve-collision  obj) colliding-objects)
-            (cond ((exists ladder? colliding-objects)
-                   => (lambda (l) (human-like-can-climb-up?-set! obj
-                                                                 (ladder-x l))))
-                  (else (human-like-can-climb-up?-set! obj #f)))
-            ;; Object state
+          (let ((objects-below     (get-objects-below obj level)))
+            
+            ;; Object state reset
             (human-like-can-walk?-set! obj #f)
+            (human-like-can-climb-up?-set! obj #f)
             (human-like-can-go-down?-set! obj #f)
+
+            ;; must be performed *before* the collision detection
+            ;; because of the position may be ajusted down
             (for-each (lambda (x)
                         (cond ((ladder? x)
                                (human-like-can-go-down?-set! obj (ladder-x x))
                                (human-like-can-walk?-set! obj #t))
                               ((wall? x)
+                               (if (<= (point-y modified-velocity) 0)
+                                   (fix-obj-y-pos! obj))
                                (human-like-can-walk?-set! obj #t))))
-                      objects-below)))
+                      objects-below)
+            (let loop ((colliding-objects (detect-collisions obj level)))
+              (if (and (> (point-y modified-velocity) 0)
+                       (not (exists ladder? colliding-objects)))
+                  (begin
+                    (pp `(Going-Down! from: ,(point-y obj)
+                                      to: ,(- (floor (point-y obj))
+                                              (point-y obj))))
+                    (human-like-velocity-set!
+                     obj
+                     ;; negative y value
+                     (new point 0 (- (floor (point-y obj)) (point-y obj))))
+                    ;;(human-like-can-go-down?-set! obj #t)
+                    (move! obj level k))
+                  (for-each
+                   (lambda (col-obj) (resolve-collision obj col-obj level k))
+                   colliding-objects)))))
         ;; resets the object state
-        (change-state! obj))))
+        (change-state! obj))
+    (k #t)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -452,6 +508,11 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-generic animate)
+(define-method (animate (p player) level)
+  (call/cc (lambda (k) (move! p level k))))
+(define-method (animate (x game-object) level)
+  'do-nothing)
 
 (define (process-key key-sym level)
   ;; the keysym are defined in the user-interface module
@@ -467,12 +528,12 @@
                                     (new point 0 (- player-movement-speed)))])))
 
 (define (advance-frame! level keys)
+  ;; not sure what is the good approach at moving objects. The player
+  ;; speed is reset every frame.
   (let ((player (level-get 'player level)))
     (player-velocity-set! player point-zero))
   (for-each (flip process-key level) keys)
-  ;; not sure what is the good approach at moving objects
-  (for-each (flip move! level)
-            (filter moving? (level-objects level)))
+  (for-each (flip animate level) (level-objects level))
   )
 
 
@@ -500,9 +561,10 @@
          (instance= (lambda (i1 i2) (xor (first-layer? i1) (first-layer? i2))))
          (instance> (lambda (i1 i2) (and (not (first-layer? i1))
                                          (first-layer? i2)))))
+    ;;(render-grid)
+    
     ;; elements sorted in reverse order such taht first layer objs are
     ;; drawn last
-    (render-grid)
     (for-each render (quick-sort instance> instance= instance<
                                  (level-objects lvl)))))
 
