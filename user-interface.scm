@@ -21,6 +21,18 @@
   (if (not (eq? color 'black))
       (draw-char sprite-font color state x y 0)))
 
+(define (draw-grid-point x y)
+  (glColor3f 1. 1. 1.)
+  (glBegin GL_POINTS)
+  (begin (glVertex2i x y)
+         (glVertex2i (+ x 2) y)
+         (glVertex2i (+ x 4) y)
+         (glVertex2i (- x 2) y)
+         (glVertex2i x (+ y 2))
+         (glVertex2i x (+ y 4))
+         (glVertex2i x (- y 2)))
+  (glEnd))
+
 (define (render-scene sdl-screen level)
   (SDL::with-locked-surface
    sdl-screen

@@ -72,15 +72,16 @@
 (define grid-cell-w 8)
 (define grid-cell-h 8)
 
-(define (make-grid) (make-matrix2d grid-width grid-height))
+(define (make-grid) (make-matrix2d grid-width grid-height (empty-set)))
 (define make-grid-cell cons)
 (define grid-cell-i car)
 (define grid-cell-j cdr)
 (define (grid-cell-eq? c1 c2) (and (= (grid-cell-i c1) (grid-cell-i c2))
                                    (= (grid-cell-j c1) (grid-cell-j c2))))
 
-(define (grid-get grid x y) (matrix2d-get grid x y))
-
+(define (grid-get grid cell) (matrix2d-get grid
+                                           (grid-cell-i cell)
+                                           (grid-cell-j cell)))
 ;; updates the game-object's grid cells
 (define (grid-update grid obj)
   (let ((old-grid-cells (game-object-grid-cells obj))
@@ -100,16 +101,19 @@
               (j (grid-cell-j new-cell))
               (grid-objects (matrix2d-get grid i j)))
          (matrix2d-set! grid i j (set-add eq? obj grid-objects))))
-     (set-substract grid-cell-eq? new-grid-cells old-grid-cells))
+     new-grid-cells)
 
     ;; The the objects cells to the new ones
     (game-object-grid-cells-set! obj new-grid-cells)))
 
 (define (grid-coord->world-coord rect)
-  (values (* (point-x rect)     grid-cell-w)
-          (* (point-y rect)     grid-cell-h)
-          (* (rect-width rect)  grid-cell-w)
-          (* (rect-height rect) grid-cell-h)))
+  ;; draw objects aligned in y to the grid!
+  (let* ((y (point-y rect))
+         (sqr-y (if (flonum? y) (##flonum->fixnum y) y)))
+    (values (* (point-x rect)     grid-cell-w)
+            (* sqr-y              grid-cell-h)
+            (* (rect-width rect)  grid-cell-w)
+            (* (rect-height rect) grid-cell-h))))
 
 (define (validate-grid-bounds! obj)
   (update! obj rect x
@@ -150,14 +154,14 @@
 
 ;; The internal positions are flonums but, the received positions are
 ;; fixnums
-(define game-object-x
-  (let ((old-fn game-object-x))
-    (lambda (obj) (let ((x (old-fn obj)))
-                    (if (flonum? x) (##flonum->fixnum x) x)))))
-(define game-object-y
-  (let ((old-fn game-object-y))
-    (lambda (obj) (let ((y (old-fn obj)))
-                    (if (flonum? y) (##flonum->fixnum y) y)))))
+;; (define game-object-x
+;;   (let ((old-fn game-object-x))
+;;     (lambda (obj) (let ((x (old-fn obj)))
+;;                     (if (flonum? x) (##flonum->fixnum (round x)) x)))))
+;; (define game-object-y
+;;   (let ((old-fn game-object-y))
+;;     (lambda (obj) (let ((y (old-fn obj)))
+;;                     (if (flonum? y) (##flonum->fixnum (round y)) y)))))
 
 (define-class stage (game-object)
   (slot: neighbours)
@@ -243,14 +247,18 @@
         (else #f)))
 
 (define (get-grid-cells obj)
-  (let ((x     (game-object-x  obj))
-        (y     (game-object-y  obj))
-        (w-max (game-object-width  obj))
-        (h-max (game-object-height obj)))
+  (let* ((x     (rect-x  obj))
+         (y     (rect-y  obj))
+         (w-max (rect-width  obj))
+         (h-max (rect-height obj))
+         (x-min (if (flonum? x) (##flonum->fixnum x) x))
+         (y-min (if (flonum? y) (##flonum->fixnum y) y))
+         (x-max (+ x w-max))
+         (y-max (+ y h-max)))
     (let loop ((w 0) (h 0) (cells '()))
-      (if (< h h-max)
-          (if (< w w-max)
-              (loop (+ w 1) h (cons (make-grid-cell (+ x w) (+ y h))
+      (if (< (+ y h) y-max)
+          (if (< (+ x w) x-max)
+              (loop (+ w 1) h (cons (make-grid-cell (+ x-min w) (+ y-min h))
                                     cells))
               (loop 0 (+ h 1) cells))
           cells))))
@@ -264,12 +272,21 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; The result should be considered a boolean value
-(define (detect-collision? obj1 obj2)
-  (and (not (eq? obj1 obj2))
-       (exists (lambda (o1-cell)
-                 (exists (lambda (o2-cell) (grid-cell-eq? o1-cell o2-cell))
-                         (game-object-grid-cells obj2)))
-               (game-object-grid-cells obj1))))
+;; (define (detect-collision? obj1 obj2)
+;;   (and (not (eq? obj1 obj2))
+;;        (exists (lambda (o1-cell)
+;;                  (exists (lambda (o2-cell) (grid-cell-eq? o1-cell o2-cell))
+;;                          (game-object-grid-cells obj2)))
+;;                (game-object-grid-cells obj1))))
+
+(define (detect-collisions obj level)
+  (pp `(,(game-object-id obj) cells: ,(game-object-grid-cells obj)
+        test: ,(get-grid-cells obj)))
+  (filter (lambda (x) (not (eq? x obj)))
+          (fold-l (curry2* set-union eq?)
+                  '()
+                  (map (curry2 grid-get (level-grid level))
+                       (game-object-grid-cells obj)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -341,6 +358,7 @@
 (define-method (change-state! (obj game-object))
   'do-nothing)
 
+;;; Movement implementation
 
 (define-generic move!)
 
@@ -379,16 +397,14 @@
         (begin
           (change-state! obj)
           (point-add! obj effective-velocity)
-          (validate-grid-bounds! obj)
+          (validate-grid-bounds! obj) ; make sure player stays in level bounds
           (grid-update (level-grid level) obj)
-          (let ((colliding-objects (filter (flip detect-collision? obj)
-                                           (level-objects level)))
-                #;(floor-objects (fold-l (lambda (acc x)
-                (set-add grid-cell-eq? x acc))
-                '()
-                )))
+          (let ((colliding-objects (detect-collisions obj level)))
             (pp `(colliding ,(game-object-id obj)
-                            with ,(map game-object-id colliding-objects)))
+                            with ,(map (lambda (x)
+                                         `(,(game-object-id x) :
+                                           ,(game-object-grid-cells x)))
+                                       colliding-objects)))
             (for-each ((currify resolve-collision 2) obj) colliding-objects)
             (cond ((exists ladder? colliding-objects)
                    => (lambda (l) (human-like-can-climb-up?-set! obj
@@ -438,6 +454,11 @@
   (receive (x y w h) (grid-coord->world-coord obj)
     (draw-textured-object texture color char x y w h)))
 
+(define (render-grid)
+  (for j 0 (< j grid-height)
+       (for i 0 (< i grid-width)
+            (draw-grid-point (* i grid-cell-w) (* j grid-cell-h)))))
+
 (define-generic render)
 
 (define-method (render (lvl level))
@@ -449,6 +470,7 @@
                                          (first-layer? i2)))))
     ;; elements sorted in reverse order such taht first layer objs are
     ;; drawn last
+    (render-grid)
     (for-each render (quick-sort instance> instance= instance<
                                  (level-objects lvl)))))
 
