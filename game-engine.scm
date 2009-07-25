@@ -82,6 +82,7 @@
 (define (grid-get grid cell) (matrix2d-get grid
                                            (grid-cell-i cell)
                                            (grid-cell-j cell)))
+
 ;; updates the game-object's grid cells
 (define (grid-update grid obj)
   (let ((old-grid-cells (game-object-grid-cells obj))
@@ -210,6 +211,8 @@
                      (facing-direction 'right)
                      (walk-cycle-state 0))))))
 
+(define (fix-obj-y-pos! obj) (update! obj game-object y floor))
+
 (define-class robot (human-like)
   (constructor: (lambda (self x0 y0 initial-velocity)
                   (init! cast: '(human-like * * * *)
@@ -246,6 +249,16 @@
                                  obj)))
         (else #f)))
 
+
+(define (get-grid-cells-at x-min x x-max y-min y y-max)
+  (let loop ((w 0) (h 0) (cells '()))
+      (if (< (+ y-min h) y-max)
+          (if (< (+ x-min w) x-max)
+              (loop (+ w 1) h (cons (make-grid-cell (+ x-min w) (+ y-min h))
+                                    cells))
+              (loop 0 (+ h 1) cells))
+          cells)))
+
 (define (get-grid-cells obj)
   (let* ((x     (rect-x  obj))
          (y     (rect-y  obj))
@@ -255,13 +268,23 @@
          (y-min (if (flonum? y) (##flonum->fixnum y) y))
          (x-max (+ x w-max))
          (y-max (+ y h-max)))
-    (let loop ((w 0) (h 0) (cells '()))
-      (if (< (+ y h) y-max)
-          (if (< (+ x w) x-max)
-              (loop (+ w 1) h (cons (make-grid-cell (+ x-min w) (+ y-min h))
-                                    cells))
-              (loop 0 (+ h 1) cells))
-          cells))))
+    (get-grid-cells-at x-min x x-max y-min y y-max)))
+
+(define (get-grid-cells-below obj)
+  (let* ((x     (rect-x  obj))
+         (w-max (rect-width  obj))
+         (x-min (if (flonum? x) (##flonum->fixnum x) x))
+         (x-max (+ x w-max))
+         (y     (- (rect-y  obj) 1))
+         (y-min (if (flonum? y) (##flonum->fixnum y) y))
+         (y-max (+ y-min 1)))
+    (get-grid-cells-at x-min x x-max y-min y y-max)))
+
+(define (get-objects-below obj level)
+  (fold-l (curry2* set-union eq?)
+          '()
+          (map (curry2 grid-get (level-grid level))
+               (get-grid-cells-below obj))))
 
 
 
@@ -280,8 +303,8 @@
 ;;                (game-object-grid-cells obj1))))
 
 (define (detect-collisions obj level)
-  (pp `(,(game-object-id obj) cells: ,(game-object-grid-cells obj)
-        test: ,(get-grid-cells obj)))
+;;   (pp `(,(game-object-id obj) cells: ,(game-object-grid-cells obj)
+;;         test: ,(get-grid-cells obj)))
   (filter (lambda (x) (not (eq? x obj)))
           (fold-l (curry2* set-union eq?)
                   '()
@@ -344,6 +367,9 @@
       (human-like-facing-direction-set! p next-state)
       (human-like-state-set! p 'ladder))))
 
+(define (fall-cycle! p)
+  (human-like-state-set! p 'jumping))
+
 (define (reset-walk-cycle! hum-like)
   ;; leave the direction unchanged...
   (human-like-walk-cycle-state-set! hum-like 0)
@@ -352,6 +378,7 @@
 (define-method (change-state! (p human-like))
   (let* ((v (moving-velocity p)))
     (cond ((not (zero? (point-x v))) (walk-cycle! p))
+          ((not (human-like-can-walk? p)) (fall-cycle! p))
           ((not (zero? (point-y v))) (ascend-cycle! p))
           (else (reset-walk-cycle! p)))))
 
@@ -375,15 +402,13 @@
       => (lambda (x) (begin (human-like-x-set! hum x)
                             (human-like-velocity-set! hum (new point 0 v-y))
                             #t)))
-     ((not (zero? v-x))
-      (if (not (human-like-can-walk? hum))
-          ;; the object falls!
-          (begin
-            (human-like-velocity-set!
-             hum
-             ;; not clean  to use player-movement-speed here!
-             (new point 0 (- player-movement-speed)))))
+     ((not (human-like-can-walk? hum))
+      ;; FIXME: not clean  to use player-movement-speed here!
+      (human-like-velocity-set! hum
+                                (new point 0 (- player-movement-speed)))
       #t)
+     ;; its ok to walk if (not (not human-like-can-walk? hum))  hehe
+     ((not (zero? v-x)) #t)
      (else
       (human-like-velocity-set! hum point-zero)
       #f))))
@@ -394,22 +419,29 @@
          (effective-velocity (point-scalar-mult velocity speed-correction)))
     (if (and (not (point-zero? effective-velocity))
              (allowed-to-move!? obj))
-        (begin
+        ;; the allowed-to-move!? might have changed the velocity!
+        (let ((modified-velocity (moving-velocity obj)))
           (change-state! obj)
-          (point-add! obj effective-velocity)
+          (point-add! obj modified-velocity)
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
           (grid-update (level-grid level) obj)
-          (let ((colliding-objects (detect-collisions obj level)))
-            (pp `(colliding ,(game-object-id obj)
-                            with ,(map (lambda (x)
-                                         `(,(game-object-id x) :
-                                           ,(game-object-grid-cells x)))
-                                       colliding-objects)))
-            (for-each ((currify resolve-collision 2) obj) colliding-objects)
+          (let ((colliding-objects (detect-collisions obj level))
+                (objects-below     (get-objects-below obj level)))
+            (for-each (curry2 resolve-collision  obj) colliding-objects)
             (cond ((exists ladder? colliding-objects)
                    => (lambda (l) (human-like-can-climb-up?-set! obj
                                                                  (ladder-x l))))
-                  (else (human-like-can-climb-up?-set! obj #f)))))
+                  (else (human-like-can-climb-up?-set! obj #f)))
+            ;; Object state
+            (human-like-can-walk?-set! obj #f)
+            (human-like-can-go-down?-set! obj #f)
+            (for-each (lambda (x)
+                        (cond ((ladder? x)
+                               (human-like-can-go-down?-set! obj (ladder-x x))
+                               (human-like-can-walk?-set! obj #t))
+                              ((wall? x)
+                               (human-like-can-walk?-set! obj #t))))
+                      objects-below)))
         ;; resets the object state
         (change-state! obj))))
 
