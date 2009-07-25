@@ -48,6 +48,18 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;; High Order Functions ;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define (curry2 f x)
+  (lambda (y) (f x y)))
+
+(define (curry2* f x)
+  (lambda y (##apply f (cons x y))))
+
+(define (curry3 f x y)
+  (lambda (z) (f x y z)))
+
+(define (curry3* f x y)
+  (lambda z (##apply f (cons x (cons y z)))))
+
 (define (flip f x)
   (lambda (y) (f y x)))
 

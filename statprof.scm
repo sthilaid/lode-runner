@@ -257,6 +257,11 @@
         (string->list 
          (stringify x)))))
 
+(define (print-html html-sexp)
+    (if (not (pair? html-sexp))
+        (display html-sexp)
+        (for-each print-html html-sexp)))
+
 ;; Quick and dirty conversion of s-expressions to html
 (define (sexp->html exp)
   
@@ -331,4 +336,4 @@
   ;; we rely on Gambit's flattening of list when printed with DISPLAY
   (with-output-to-string ""
                          (lambda ()
-                           (display (open-tag exp)))))
+                           (print-html (open-tag exp)))))
