@@ -215,6 +215,11 @@
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
                                  self (gensym 'wall) x y w h))))
 
+(define-class hole  (stage)
+  (constructor:
+   (lambda (self x y) (init! cast: '(stage * * * * *)
+                             self (gensym 'hole) x y 1 1))))
+
 (define-class ladder (stage)
   (constructor:
    (lambda (self x y h) (init! cast: '(stage * * * * *)
@@ -291,7 +296,31 @@
           (map (curry2 grid-get (level-grid level))
                (get-grid-cells-below obj))))
 
+(define (get-holes-below obj level)
+  ;; assuming that there are no hole instances
+  (let ((holes (filter (compose null? (curry2 grid-get (level-grid level)))
+                       (get-grid-cells-below obj))))
+    (if (null? holes)
+        #f
+        (map (lambda (cell) (new hole (grid-cell-i cell) (grid-cell-j cell)))
+             holes))))
 
+(define (human-like-can-fall? obj level)
+  (let* ((holes (get-holes-below obj level))
+         (sorted-holes-x (and holes (quick-sort < = > (map point-x holes))))
+         (filtered-holes
+          (and sorted-holes-x (let loop ((val (car sorted-holes-x))
+                                         (holes-x (cdr sorted-holes-x))
+                                         (acc (list (car sorted-holes-x))))
+                                (cond ((null? holes-x) acc)
+                                      ((= (car holes-x) val)
+                                       (loop (car holes-x) (cdr holes-x)
+                                             (cons (car holes-x) acc)))
+                                      (else acc))))))
+    (and filtered-holes
+         (>= (* (hole-width (car holes))
+                (length filtered-holes)))
+         (car sorted-holes-x))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -472,15 +501,24 @@
 
             ;; must be performed *before* the collision detection
             ;; because of the position may be ajusted down
-            (for-each (lambda (x)
-                        (cond ((ladder? x)
-                               (human-like-can-go-down?-set! obj (ladder-x x))
-                               (human-like-can-walk?-set! obj #t))
-                              ((wall? x)
-                               (if (<= (point-y modified-velocity) 0)
-                                   (fix-obj-y-pos! obj))
-                               (human-like-can-walk?-set! obj #t))))
+            (for-each
+             (lambda (x)
+               (cond ((instance-of? x 'ladder)
+                      (human-like-can-go-down?-set! obj (ladder-x x))
+                      (human-like-can-walk?-set! obj #t))
+                     ((instance-of? x 'wall)
+                      (if (<= (point-y modified-velocity) 0)
+                          (fix-obj-y-pos! obj))
+                      (human-like-can-walk?-set! obj #t))))
                       objects-below)
+
+            (let ((can-fall? (human-like-can-fall? obj level)))
+              (if can-fall?
+                  (let ((dx (- can-fall? (point-x obj))))
+                    (human-like-velocity-set! obj (new point dx 0))
+                    (move! obj level k))))
+
+            ;; Perform collision detection / resolution
             (let loop ((colliding-objects (detect-collisions obj level)))
               (if (and (> (point-y modified-velocity) 0)
                        (not (exists ladder? colliding-objects)))
@@ -510,7 +548,10 @@
 
 (define-generic animate)
 (define-method (animate (p player) level)
-  (call/cc (lambda (k) (move! p level k))))
+  (call/cc (lambda (k) (if (not (player-can-walk? p))
+                           (player-velocity-set!
+                                   p (new point 0 (- player-movement-speed))))
+                   (move! p level k))))
 (define-method (animate (x game-object) level)
   'do-nothing)
 
@@ -533,7 +574,7 @@
   (let ((player (level-get 'player level)))
     (player-velocity-set! player point-zero))
   (for-each (flip process-key level) keys)
-  (for-each (flip animate level) (level-objects level))
+  (for-each (flip animate level) (filter human-like? (level-objects level)))
   )
 
 
@@ -555,21 +596,14 @@
 (define-generic render)
 
 (define-method (render (lvl level))
-  (let* ((first-layer? human-like?)
-         (instance< (lambda (i1 i2) (and (first-layer? i1)
-                                         (not (first-layer? i2)))))
-         (instance= (lambda (i1 i2) (xor (first-layer? i1) (first-layer? i2))))
-         (instance> (lambda (i1 i2) (and (not (first-layer? i1))
-                                         (first-layer? i2)))))
-    ;;(render-grid)
-    
-    ;; elements sorted in reverse order such taht first layer objs are
-    ;; drawn last
-    (for-each render (quick-sort instance> instance= instance<
-                                 (level-objects lvl)))))
+  (for-each render (level-objects lvl))
+  (render (level-get 'player lvl)))
 
 (define-method (render (w wall))
   (render-object w wall 'pink 'wall))
+
+(define-method (render (h hole))
+  'do-nothing-hehe)
 
 (define-method (render (g gold))
   (render-object g gold 'regular 'gold))

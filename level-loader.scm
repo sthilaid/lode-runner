@@ -16,6 +16,16 @@
 (define robot-load-id           8)
 (define player-load-id          9)
 
+(define (load-hole mat i j)
+  (let* ((x j) (y i)
+         (hole (new hole x y)))
+    (for-each (lambda (cell)
+                (let ((x (grid-cell-i cell))
+                      (y (grid-cell-j cell)))
+                 (matrix2d-set! mat y x dummy-load-id)))
+              (get-grid-cells hole))
+    hole))
+
 (define (load-player mat i j)
   (let* ((x j) (y i)
          (player (new player x y (new point 0 0))))
@@ -138,6 +148,7 @@
                      (object
                       (and id
                            (cond
+                            ;;((= id clear-load-id)   (load-hole mat i j))
                             ((= id player-load-id)  (load-player mat i j))
                             ((= id gold-load-id)    (load-gold mat i j))
                             ((= id robot-load-id)   (load-robot mat i j))

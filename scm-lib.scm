@@ -68,6 +68,11 @@
 
 (define (identity x) x)
 
+(define (compose f . gs)
+  (lambda (x) (fold-l (lambda (acc f) (f acc))
+                      x
+                      (reverse (cons f gs)))))
+
 ;;;;;;;;;;;;;;;;;;;;;;; list operations ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (create-list number thunk)
@@ -219,16 +224,17 @@
         '())))
 
 
-(define (quick-sort smaller? equal? greater? lst)
-  (if (or (not (pair? lst))
-          (null? (cdr lst)))
-      lst
-      (let ((pivot (car lst)))
-        (append (quick-sort smaller? equal? greater?
-                            (filter (lambda (x) (smaller? x pivot)) lst))
-                (filter (lambda (x) (equal? x pivot)) lst)
-                (quick-sort smaller? equal? greater?
-                            (filter (lambda (x) (greater? x pivot)) lst))))))
+(define (quick-sort smaller? equal? greater? lst
+                    #!key (accessor identity))
+  (let loop ((lst lst))
+   (if (or (not (pair? lst))
+           (null? (cdr lst)))
+       lst
+       (let ((pivot (accessor (car lst))))
+         (append
+          (loop (filter (lambda (x) (smaller? (accessor x) pivot)) lst))
+          (filter (lambda (x) (equal? (accessor x) pivot)) lst)
+          (loop (filter (lambda (x) (greater? (accessor x) pivot)) lst)))))))
 
 (define-macro (extremum-fonction comparator opposite-extremum)
   (let ((lst-sym (gensym 'lst-sym))
