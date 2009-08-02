@@ -4,7 +4,11 @@
 
 ;; FPS is calculated in the user interface
 (define FPS (create-bounded-simple-moving-avg 5))
-(define player-movement-speed 0.3)
+
+;; Note: The player movement speed must be multipliable to give 1 so
+;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
+;; ensures that the player always falls in holes on the ground...
+(define player-movement-speed 2/8)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -140,8 +144,8 @@
          (y     (rect-y  obj))
          (w-max (rect-width  obj))
          (h-max (rect-height obj))
-         (x-min (if (flonum? x) (##flonum->fixnum x) x))
-         (y-min (if (flonum? y) (##flonum->fixnum y) y))
+         (x-min (floor x))
+         (y-min (floor y))
          (x-max (+ x w-max))
          (y-max (+ y h-max)))
     (get-grid-cells-at x-min x x-max y-min y y-max)))
@@ -149,10 +153,10 @@
 (define (get-grid-cells-below obj)
   (let* ((x     (rect-x  obj))
          (w-max (rect-width  obj))
-         (x-min (if (flonum? x) (##flonum->fixnum x) x))
+         (x-min (floor x))
          (x-max (+ x w-max))
          (y     (- (rect-y  obj) 1))
-         (y-min (if (flonum? y) (##flonum->fixnum y) y))
+         (y-min (floor y))
          (y-max (+ y-min 1)))
     (get-grid-cells-at x-min x x-max y-min y y-max)))
 
@@ -304,23 +308,6 @@
         #f
         (map (lambda (cell) (new hole (grid-cell-i cell) (grid-cell-j cell)))
              holes))))
-
-(define (human-like-can-fall? obj level)
-  (let* ((holes (get-holes-below obj level))
-         (sorted-holes-x (and holes (quick-sort < = > (map point-x holes))))
-         (filtered-holes
-          (and sorted-holes-x (let loop ((val (car sorted-holes-x))
-                                         (holes-x (cdr sorted-holes-x))
-                                         (acc (list (car sorted-holes-x))))
-                                (cond ((null? holes-x) acc)
-                                      ((= (car holes-x) val)
-                                       (loop (car holes-x) (cdr holes-x)
-                                             (cons (car holes-x) acc)))
-                                      (else acc))))))
-    (and filtered-holes
-         (>= (* (hole-width (car holes))
-                (length filtered-holes)))
-         (car sorted-holes-x))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -500,7 +487,7 @@
             (human-like-can-go-down?-set! obj #f)
 
             ;; must be performed *before* the collision detection
-            ;; because of the position may be ajusted down
+            ;; because of the position may be ajusted 
             (for-each
              (lambda (x)
                (cond ((instance-of? x 'ladder)
@@ -511,12 +498,6 @@
                           (fix-obj-y-pos! obj))
                       (human-like-can-walk?-set! obj #t))))
                       objects-below)
-
-            (let ((can-fall? (human-like-can-fall? obj level)))
-              (if can-fall?
-                  (let ((dx (- can-fall? (point-x obj))))
-                    (human-like-velocity-set! obj (new point dx 0))
-                    (move! obj level k))))
 
             ;; Perform collision detection / resolution
             (let loop ((colliding-objects (detect-collisions obj level)))
