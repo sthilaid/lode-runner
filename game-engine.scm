@@ -240,7 +240,9 @@
 (define-class human-like (game-object moving statefull)
   (slot: can-climb-up?) ; #f or contains the x pos of the colliding ladder
   (slot: can-go-down?)  ; #f or contains the x pos of the colliding ladder
-  (slot: can-walk?)     ; #f, #t
+  (slot: can-use-rope?) ; #f or contains the y pos of the colliding handbar
+  (slot: can-walk?)     ; boolean
+  (slot: droped-rope?)  ; boolean
   (slot: facing-direction)
   (slot: walk-cycle-state)
   (constructor: (lambda (self x0 y0 initial-velocity id)
@@ -252,6 +254,8 @@
                      (can-climb-up? #f)
                      (can-go-down? #f)
                      (can-walk? #t)
+                     (can-use-rope? #f)
+                     (droped-rope? #f)
                      (facing-direction 'right)
                      (walk-cycle-state 0))))))
 
@@ -340,11 +344,20 @@
 
 (define-generic resolve-collision)
 
+;; Handbar collisions
+(define-method (resolve-collision (hb handbar) (h human-like) level k)
+  (human-like-can-use-rope?-set! h (handbar-y hb))
+  (human-like-can-go-down?-set! h (human-like-x h)))
+(define-method (resolve-collision (h human-like) (hb handbar) level k)
+  (resolve-collision hb h level k))
+
+;; Ladder collisions
 (define-method (resolve-collision (l ladder) (h human-like) level k)
   (human-like-can-climb-up?-set! h (ladder-x l)))
 (define-method (resolve-collision (h human-like) (l ladder) level k)
   (resolve-collision l h level k))
 
+;; Wall collisions
 (define-method (resolve-collision (h human-like) (w wall) level k)
   (let* ((velo (human-like-velocity h))
          (vx (point-x velo))
@@ -360,7 +373,9 @@
                                       (+ w.x w.w (- h.x))
                                       (- (+ h.x h.w (- w.x))))
                             0)))
+        ;; ensure here that the walk flag is set to #t to walk back
         (human-like-can-walk?-set! h #t)
+        ;; and move back the character to be in front of the wall
         (human-like-velocity-set! h new-velo)
         (move! h level
                (lambda (r)
@@ -388,6 +403,11 @@
           ((> (point-x velocity) 0) 'right)
           (else (human-like-facing-direction obj))))
 
+(define (human-like-can-go-forward? h)
+  (or (human-like-can-walk? h)
+      (and (human-like-can-use-rope? h)
+           (not (human-like-droped-rope? h)))))
+
 (define (walk-cycle! p)
   (let* ((cycling-delta 5)
          (cycle-length (* 4 cycling-delta)))
@@ -403,6 +423,22 @@
       (human-like-facing-direction-set! p
                                         (get-direction
                                          (human-like-velocity p)))
+      (human-like-state-set! p next-state))))
+
+(define (rope-cycle! p)
+  (let* ((cycling-delta 5)
+         (cycle-length (* 4 cycling-delta)))
+    (update! p player walk-cycle-state
+             (lambda (s) (modulo (+ s 1) cycle-length)))
+    (let ((next-state
+           (case (quotient (player-walk-cycle-state p) cycling-delta)
+             ((0) 'rope-1-right)
+             ((1) 'rope-2-right)
+             ((2) 'rope-1-left)
+             ((3) 'rope-2-left) 
+             (else (error "Invalid player rope cycle state")))))
+      (human-like-facing-direction-set! p (get-direction
+                                           (human-like-velocity p)))
       (human-like-state-set! p next-state))))
 
 (define (ascend-cycle! p)
@@ -428,8 +464,14 @@
 
 (define-method (change-state! (p human-like))
   (let* ((v (moving-velocity p)))
-    (cond ((not (zero? (point-x v))) (walk-cycle! p))
-          ((not (human-like-can-walk? p)) (fall-cycle! p))
+    (cond ((and (not (zero? (point-x v)))
+                (human-like-can-walk? p))
+           (walk-cycle! p))
+          ((human-like-can-use-rope? p)
+           (if (not (zero? (point-x v)))
+               (rope-cycle! p)
+               'keep-same-state^_^))
+          ((not (human-like-can-go-forward? p)) (fall-cycle! p))
           ((not (zero? (point-y v))) (ascend-cycle! p))
           (else (reset-walk-cycle! p)))))
 
@@ -454,13 +496,20 @@
       => (lambda (x) (begin (human-like-x-set! hum x)
                             (human-like-velocity-set! hum (new point 0 v-y))
                             #t)))
-     ((not (human-like-can-walk? hum))
+     ;; Gravity simulation here...
+     ((not (human-like-can-go-forward? hum))
       ;; FIXME: not clean  to use player-movement-speed here!
       (human-like-velocity-set! hum
                                 (new point 0 (- player-movement-speed)))
       #t)
-     ;; its ok to walk if (not (not human-like-can-walk? hum))  hehe
-     ((not (zero? v-x)) #t)
+     ;; Can the player move in x?
+     ((and (human-like-can-go-forward? hum)
+           (not (zero? v-x)))
+      ;; set the y position of the player to correspond to the rope
+      ;; FIXME: This operation (- y 2) might be dangerous...?
+      (cond ((human-like-can-use-rope? hum)
+             => (lambda (y) (human-like-y-set! hum (- y 2)))))
+      #t)
      (else
       (human-like-velocity-set! hum point-zero)
       #f))))
@@ -482,9 +531,11 @@
           (let ((objects-below     (get-objects-below obj level)))
             
             ;; Object state reset
-            (human-like-can-walk?-set! obj #f)
-            (human-like-can-climb-up?-set! obj #f)
-            (human-like-can-go-down?-set! obj #f)
+            (set-fields! obj human-like
+              ((can-walk?     #f)
+               (can-climb-up? #f)
+               (can-go-down?  #f)
+               (can-use-rope? #f)))
 
             ;; must be performed *before* the collision detection
             ;; because of the position may be ajusted 
@@ -496,6 +547,8 @@
                      ((instance-of? x 'wall)
                       (if (<= (point-y modified-velocity) 0)
                           (fix-obj-y-pos! obj))
+                      ;; reset the drop rope flag when above a wall
+                      (human-like-droped-rope?-set! obj #f)
                       (human-like-can-walk?-set! obj #t))))
                       objects-below)
 
@@ -529,10 +582,11 @@
 
 (define-generic animate)
 (define-method (animate (p player) level)
-  (call/cc (lambda (k) (if (not (player-can-walk? p))
-                           (player-velocity-set!
-                                   p (new point 0 (- player-movement-speed))))
-                   (move! p level k))))
+  (call/cc (lambda (k)
+             (if (not (human-like-can-go-forward? p))
+                 (player-velocity-set!
+                  p (new point 0 (- player-movement-speed))))
+             (move! p level k))))
 (define-method (animate (x game-object) level)
   'do-nothing)
 
@@ -546,8 +600,9 @@
                                     (new point player-movement-speed 0))]
      [(up)    (player-velocity-set! player
                                     (new point 0 player-movement-speed))]
-     [(down)  (player-velocity-set! player
-                                    (new point 0 (- player-movement-speed)))])))
+     [(down)
+      (player-droped-rope?-set! player #t)
+      (player-velocity-set! player (new point 0 (- player-movement-speed)))])))
 
 (define (advance-frame! level keys)
   ;; not sure what is the good approach at moving objects. The player

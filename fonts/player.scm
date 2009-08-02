@@ -4,4 +4,8 @@
           standing-left
           jumping
           ladder
-          waiting)))
+          waiting
+          rope-1-right
+          rope-1-left
+          rope-2-left
+          rope-2-right)))
