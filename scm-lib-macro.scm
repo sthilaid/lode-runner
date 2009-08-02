@@ -24,6 +24,13 @@
         (if ,condvar
             (begin ,action ,@actions (,loop ,cond)))))
 
+(define-macro (enum x . xs)
+  `(begin
+     ,@(let loop ((i 0) (xs (cons x xs)) (acc '()))
+         (if (not (pair? xs))
+             (reverse acc)
+             (loop (+ i 1) (cdr xs) (cons `(define ,(car xs) ,i) acc))))))
+
 (define-macro (to-string e1 . es)
   `(with-output-to-string "" (lambda () ,e1 ,@es)))
 

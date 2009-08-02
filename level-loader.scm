@@ -173,7 +173,7 @@
             (new level 
                  (path-strip-directory (path-strip-extension filename)) ; name
                  grid                   ; grid
-                 all-objects            ; objects
+                 (quick-sort < = > all-objects accessor: get-layer)  ; objects
                  (make-table test: eq?) ; obj-cache
                  0                      ; score
                  ))))))

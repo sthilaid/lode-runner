@@ -8,6 +8,9 @@
 (define event-thread #f)
 (define display-fps? #f)
 
+(define (set-bg-color!)
+  (glColor3f .3 .3 .3))
+
 (define (render-string x y str color)
   (if (not (eq? color 'black))
       (let loop ((i 0) (chars (string->list str)))
@@ -20,6 +23,16 @@
 (define (render-fontified-sprite sprite-font x y state color)
   (if (not (eq? color 'black))
       (draw-char sprite-font color state x y 0)))
+
+(define (render-hole x y w h)
+  ;;(set-bg-color!)
+    (glColor3f 0. 1. 0.)
+    (glBegin GL_TRIANGLE_STRIP)
+    (glVertex2i x y)
+    (glVertex2i (+ x w) y)
+    (glVertex2i x (+ y h))
+    (glVertex2i (+ x w) (+ y h))
+    (glEnd))
 
 (define (draw-grid-point x y)
   (glColor3f 1. 1. 1.)
@@ -37,7 +50,7 @@
   (SDL::with-locked-surface
    sdl-screen
    (lambda ()
-     (glClearColor 0. 0. 0. 0.)
+     (set-bg-color!)
      (glClear GL_COLOR_BUFFER_BIT)
 
      ;; Draw background stuff
@@ -76,14 +89,12 @@
         (modifiers (SDL::key-modifiers evt-struct))
         (unicode   (SDL::key-unicode   evt-struct)))
     (case key-enum
-      [(key-left-arrow)   (key-down-table-add! 'left
-                                               (lambda () 'todo))]
-      [(key-right-arrow)  (key-down-table-add! 'right
-                                               (lambda () 'todo))]
-      [(key-up-arrow)     (key-down-table-add! 'up
-                                               (lambda () 'todo))]
-      [(key-down-arrow)   (key-down-table-add! 'down
-                                               (lambda () 'todo))]
+      [(key-left-arrow)   (key-down-table-add! 'left        #t)]
+      [(key-right-arrow)  (key-down-table-add! 'right       #t)]
+      [(key-up-arrow)     (key-down-table-add! 'up          #t)]
+      [(key-down-arrow)   (key-down-table-add! 'down        #t)]
+      [(key-left-control) (key-down-table-add! 'shoot-left  #t)]
+      [(key-left-alt)     (key-down-table-add! 'shoot-right #t)]
       [(key-f)            (set! display-fps? (not display-fps?))]
       [(key-l)            (set! fullscreen-mode? (not fullscreen-mode?))
        (pp fullscreen-mode?)]
@@ -97,8 +108,9 @@
       [(key-left-arrow)   (key-down-table-reset-key 'left)]
       [(key-right-arrow)  (key-down-table-reset-key 'right)]
       [(key-up-arrow)     (key-down-table-reset-key 'up)]
-      [(key-down-arrow)   (key-down-table-reset-key 'down)])
-    ))
+      [(key-down-arrow)   (key-down-table-reset-key 'down)]
+      [(key-left-control) (key-down-table-reset-key 'shoot-left)]
+      [(key-left-alt)     (key-down-table-reset-key 'shoot-right)])))
 
 (define (->quit evt-struct)
   (request-exit))
@@ -153,7 +165,7 @@
             (managage-sdl-event evt-struct)
             (poll-loop (SDL::poll-event evt-struct)))
           (begin
-            (for-each (lambda (x) (x)) (key-down-table-actions))
+            ;(for-each (lambda (x) (x)) (key-down-table-actions))
             (thread-sleep! 0.01)
             (poll-loop (SDL::poll-event evt-struct)))))))
 

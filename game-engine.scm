@@ -10,6 +10,12 @@
 ;; ensures that the player always falls in holes on the ground...
 (define player-movement-speed 2/8)
 
+(enum background-layer
+      stage-layer
+      foreground-layer
+      human-like-layer
+      top-layer)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -176,7 +182,9 @@
 (define-class moving ()    (slot: velocity))
 
 ;; game-object has x,y pos and with and height for bbox
-(define-class game-object (rect) (slot: id) (slot: grid-cells)
+(define-class game-object (rect)
+  (slot: id)
+  (slot: grid-cells)
   (constructor: (lambda (self id x y w h)
                   (set-fields! self game-object
                                ((x x)
@@ -221,8 +229,8 @@
 
 (define-class hole  (stage)
   (constructor:
-   (lambda (self x y) (init! cast: '(stage * * * * *)
-                             self (gensym 'hole) x y 1 1))))
+   (lambda (self x y w h) (init! cast: '(stage * * * * *)
+                                 self (gensym 'hole) x y w h))))
 
 (define-class ladder (stage)
   (constructor:
@@ -280,15 +288,24 @@
   (slot: obj-cache)
   (slot: score))
 
+;; internal funcions
 (define (level-cache-add! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj) obj))
 (define (level-cache-remove! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj)))
+
+;;; Level interface
+(define (level-add! obj lvl)
+  ;; insert the object within the layer ordered list
+  (level-objects-set! lvl (insert-in-ordered-list < obj (level-objects lvl)
+                                                  accessor: get-layer))
+  (grid-update (level-grid lvl) obj))
+
 (define (level-delete! obj lvl)
   (update! lvl level objects
            (lambda (objs)
-             (list-remove (lambda (obj) (eq? (game-object-id obj id))) objs)))
-  (level-cache-remove! id level))
+             (list-remove (lambda (obj2) (eq? obj obj2)) objs)))
+  (level-cache-remove! (game-object-id obj) level))
 
 (define (level-get id level)
   (cond ((table-ref (level-obj-cache level) id #f) => identity)
@@ -310,22 +327,31 @@
                        (get-grid-cells-below obj))))
     (if (null? holes)
         #f
-        (map (lambda (cell) (new hole (grid-cell-i cell) (grid-cell-j cell)))
+        (map (lambda (cell) (new hole (grid-cell-i cell) (grid-cell-j cell)
+                                 1 1))
              holes))))
+
+(define (within-grid-bounds? p)
+  (let ((x (point-x p))
+        (y (point-y p)))
+    (and (< x grid-width)
+         (>= x 0)
+         (< y grid-height)
+         (>= y 0))))
+
+(define (generate-hole p direction lvl)
+  (let* ((fn (cadr (assq direction `((left ,-) (right ,+)))))
+         (x (fn (player-x p) 2))
+         (y (- (player-y p) 2))
+         (h (new hole x y 2 2)))
+    (and (within-grid-bounds? h)
+         (level-add! h lvl))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Collision detection
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; The result should be considered a boolean value
-;; (define (detect-collision? obj1 obj2)
-;;   (and (not (eq? obj1 obj2))
-;;        (exists (lambda (o1-cell)
-;;                  (exists (lambda (o2-cell) (grid-cell-eq? o1-cell o2-cell))
-;;                          (game-object-grid-cells obj2)))
-;;                (game-object-grid-cells obj1))))
 
 (define (detect-collisions obj level)
 ;;   (pp `(,(game-object-id obj) cells: ,(game-object-grid-cells obj)
@@ -550,7 +576,7 @@
                       ;; reset the drop rope flag when above a wall
                       (human-like-droped-rope?-set! obj #f)
                       (human-like-can-walk?-set! obj #t))))
-                      objects-below)
+             objects-below)
 
             ;; Perform collision detection / resolution
             (let loop ((colliding-objects (detect-collisions obj level)))
@@ -602,7 +628,9 @@
                                     (new point 0 player-movement-speed))]
      [(down)
       (player-droped-rope?-set! player #t)
-      (player-velocity-set! player (new point 0 (- player-movement-speed)))])))
+      (player-velocity-set! player (new point 0 (- player-movement-speed)))]
+     [(shoot-left)  (generate-hole player 'left  level)]
+     [(shoot-right) (generate-hole player 'right level)])))
 
 (define (advance-frame! level keys)
   ;; not sure what is the good approach at moving objects. The player
@@ -619,6 +647,17 @@
 ;;; Object rendering
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-generic get-layer)
+(define-method (get-layer (h human-like))
+  human-like-layer)
+;; holes must be drawn above the stage objects (walls)
+(define-method (get-layer (h hole))
+  foreground-layer)
+(define-method (get-layer (s stage))
+  stage-layer)
+(define-method (get-layer (obj game-object))
+  foreground-layer)
 
 (define (render-object obj texture color char)
   (receive (x y w h) (grid-coord->world-coord obj)
@@ -639,7 +678,8 @@
   (render-object w wall 'pink 'wall))
 
 (define-method (render (h hole))
-  'do-nothing-hehe)
+  (receive (x y w h) (grid-coord->world-coord h)
+    (render-hole x y w h)))
 
 (define-method (render (g gold))
   (render-object g gold 'regular 'gold))

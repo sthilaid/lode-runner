@@ -236,6 +236,16 @@
           (filter (lambda (x) (equal? (accessor x) pivot)) lst)
           (loop (filter (lambda (x) (greater? (accessor x) pivot)) lst)))))))
 
+(define (insert-in-ordered-list smaller obj lst #!key (accessor identity))
+  (let ((obj-value (accessor obj)))
+    (let loop ((lst lst) (acc '()))
+      (cond ((not (pair? lst))
+             (reverse (cons obj acc)))
+            ((smaller obj-value (accessor (car lst)))
+             (append (reverse acc) (cons obj lst)))
+            (else
+             (loop (cdr lst) (cons (car lst) acc)))))))
+
 (define-macro (extremum-fonction comparator opposite-extremum)
   (let ((lst-sym (gensym 'lst-sym))
         (extremum-sym (gensym 'extremum-sym))
