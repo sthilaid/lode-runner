@@ -138,7 +138,11 @@
 
 
 
+;; Will return all the grid cells in the range [x,x-max][y,y-max]
+;; considering that cells start a [x-min,y-min]. Allows to use non
+;; grid orthogonal x and y values.
 (define (get-grid-cells-at x-min x x-max y-min y y-max)
+  (pp `(get-grid-cells-at ,x-min ,x ,x-max ,y-min ,y ,y-max))
   (let loop ((w 0) (h 0) (cells '()))
       (if (< (+ y-min h) y-max)
           (if (< (+ x-min w) x-max)
@@ -152,13 +156,12 @@
                         (y-offset 0)
                         (width (rect-width obj))
                         (height (rect-height obj)))
-  (let* ((x     (+ (rect-x  obj) x-offset))
-         (y     (+ (rect-y  obj) y-offset))
-         (x-min (floor x))
-         (y-min (floor y))
+  ;; snap to grid the object by having x-min = x and y-min = y
+  (let* ((x-min (floor (+ (rect-x  obj) x-offset)))
+         (y-min (floor (+ (rect-y  obj) y-offset)))
          (x-max (+ x width))
          (y-max (+ y height)))
-    (get-grid-cells-at x-min x x-max y-min y y-max)))
+    (get-grid-cells-at x-min x-min x-max y-min y-min y-max)))
 
 (define (get-grid-cells-below obj)
   (get-grid-cells obj y-offset: -1 height: 1))
@@ -584,8 +587,7 @@
                         (else #f))))
 ;;             (pp `(,(map (lambda (x) (cons (game-object-id x)
 ;;                                           (get-class-id x)))
-;;                         objects-below)
-;;                   above-a-hole? => ,above-a-hole?))
+;;                         objects-below)))
             
             ;; Object state reset
             (set-fields! obj human-like
@@ -614,22 +616,10 @@
              objects-below)
 
             ;; Perform collision detection / resolution
-            (let loop ((colliding-objects (detect-collisions obj level)))
-              (if (and (> (point-y modified-velocity) 0)
-                       (not (exists ladder? colliding-objects)))
-                  (begin
-                    (pp `(Going-Down! from: ,(point-y obj)
-                                      to: ,(- (floor (point-y obj))
-                                              (point-y obj))))
-                    (human-like-velocity-set!
-                     obj
-                     ;; negative y value
-                     (new point 0 (- (floor (point-y obj)) (point-y obj))))
-                    ;;(human-like-can-go-down?-set! obj #t)
-                    (move! obj level k))
-                  (for-each
-                   (lambda (col-obj) (resolve-collision obj col-obj level k))
-                   colliding-objects)))))
+            (let ((colliding-objects (detect-collisions obj level)))
+              (for-each (lambda (col-obj)
+                          (resolve-collision obj col-obj level k))
+                        colliding-objects))))
         ;; resets the object state
         (change-state! obj))
     (k #t)))
