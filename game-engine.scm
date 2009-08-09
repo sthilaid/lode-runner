@@ -142,7 +142,6 @@
 ;; considering that cells start a [x-min,y-min]. Allows to use non
 ;; grid orthogonal x and y values.
 (define (get-grid-cells-at x-min x x-max y-min y y-max)
-  (pp `(get-grid-cells-at ,x-min ,x ,x-max ,y-min ,y ,y-max))
   (let loop ((w 0) (h 0) (cells '()))
       (if (< (+ y-min h) y-max)
           (if (< (+ x-min w) x-max)
@@ -156,9 +155,11 @@
                         (y-offset 0)
                         (width (rect-width obj))
                         (height (rect-height obj)))
-  ;; snap to grid the object by having x-min = x and y-min = y
   (let* ((x-min (floor (+ (rect-x  obj) x-offset)))
          (y-min (floor (+ (rect-y  obj) y-offset)))
+         ;; snap to grid the object by having x-min = x and y-min = y
+         (x x-min)
+         (y y-min)
          (x-max (+ x width))
          (y-max (+ y height)))
     (get-grid-cells-at x-min x-min x-max y-min y-min y-max)))
