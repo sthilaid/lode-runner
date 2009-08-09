@@ -155,14 +155,14 @@
                         (y-offset 0)
                         (width (rect-width obj))
                         (height (rect-height obj)))
-  (let* ((x-min (floor (+ (rect-x  obj) x-offset)))
-         (y-min (floor (+ (rect-y  obj) y-offset)))
-         ;; snap to grid the object by having x-min = x and y-min = y
-         (x x-min)
-         (y y-min)
+  (let* ((x (+ (rect-x  obj) x-offset))
+         (x-min (floor x))
          (x-max (+ x width))
+         ;; snap to grid in y the object by having y-min = y
+         (y-min (floor (+ (rect-y  obj) y-offset)))
+         (y y-min)
          (y-max (+ y height)))
-    (get-grid-cells-at x-min x-min x-max y-min y-min y-max)))
+    (get-grid-cells-at x-min x x-max y-min y y-max)))
 
 (define (get-grid-cells-below obj)
   (get-grid-cells obj y-offset: -1 height: 1))
@@ -698,6 +698,7 @@
 (define-generic render)
 
 (define-method (render (lvl level))
+  ;;(render-grid)
   (for-each render (level-objects lvl))
   (render (level-get 'player lvl)))
 
