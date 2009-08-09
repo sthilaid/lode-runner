@@ -131,8 +131,10 @@
 (define (validate-grid-bounds! obj)
   (update! obj rect x
            (lambda (x) (max 0 (min (- grid-width  (rect-width  obj)) x))))
+  ;; 1 is the min y value because of the presence of the fake wall
+  ;; below the level
   (update! obj rect y
-           (lambda (y) (max 0 (min (- grid-height (rect-height obj)) y)))))
+           (lambda (y) (max 1 (min (- grid-height (rect-height obj)) y)))))
 
 
 
@@ -145,26 +147,21 @@
               (loop 0 (+ h 1) cells))
           cells)))
 
-(define (get-grid-cells obj)
-  (let* ((x     (rect-x  obj))
-         (y     (rect-y  obj))
-         (w-max (rect-width  obj))
-         (h-max (rect-height obj))
+(define (get-grid-cells obj #!key
+                        (x-offset 0)
+                        (y-offset 0)
+                        (width (rect-width obj))
+                        (height (rect-height obj)))
+  (let* ((x     (+ (rect-x  obj) x-offset))
+         (y     (+ (rect-y  obj) y-offset))
          (x-min (floor x))
          (y-min (floor y))
-         (x-max (+ x w-max))
-         (y-max (+ y h-max)))
+         (x-max (+ x width))
+         (y-max (+ y height)))
     (get-grid-cells-at x-min x x-max y-min y y-max)))
 
 (define (get-grid-cells-below obj)
-  (let* ((x     (rect-x  obj))
-         (w-max (rect-width  obj))
-         (x-min (floor x))
-         (x-max (+ x w-max))
-         (y     (- (rect-y  obj) 1))
-         (y-min (floor y))
-         (y-max (+ y-min 1)))
-    (get-grid-cells-at x-min x x-max y-min y y-max)))
+  (get-grid-cells obj y-offset: -1 height: 1))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -249,8 +246,9 @@
   (slot: can-climb-up?) ; #f or contains the x pos of the colliding ladder
   (slot: can-go-down?)  ; #f or contains the x pos of the colliding ladder
   (slot: can-use-rope?) ; #f or contains the y pos of the colliding handbar
-  (slot: can-walk?)     ; boolean
-  (slot: droped-rope?)  ; boolean
+  (slot: can-walk?)        ; boolean
+  (slot: droped-rope?)     ; boolean
+  (slot: stuck-in-hole?) ; boolean
   (slot: facing-direction)
   (slot: walk-cycle-state)
   (constructor: (lambda (self x0 y0 initial-velocity id)
@@ -264,6 +262,7 @@
                      (can-walk? #t)
                      (can-use-rope? #f)
                      (droped-rope? #f)
+                     (stuck-in-hole? #f)
                      (facing-direction 'right)
                      (walk-cycle-state 0))))))
 
@@ -321,16 +320,6 @@
           (map (curry2 grid-get (level-grid level))
                (get-grid-cells-below obj))))
 
-(define (get-holes-below obj level)
-  ;; assuming that there are no hole instances
-  (let ((holes (filter (compose null? (curry2 grid-get (level-grid level)))
-                       (get-grid-cells-below obj))))
-    (if (null? holes)
-        #f
-        (map (lambda (cell) (new hole (grid-cell-i cell) (grid-cell-j cell)
-                                 1 1))
-             holes))))
-
 (define (within-grid-bounds? p)
   (let ((x (point-x p))
         (y (point-y p)))
@@ -340,12 +329,23 @@
          (>= y 0))))
 
 (define (generate-hole p direction lvl)
-  (let* ((fn (cadr (assq direction `((left ,-) (right ,+)))))
-         (x (fn (player-x p) 2))
-         (y (- (player-y p) 2))
-         (h (new hole x y 2 2)))
-    (and (within-grid-bounds? h)
-         (level-add! h lvl))))
+  (let* ((hole-x-offset (cadr (assq direction `((left -2) (right 2)))))
+         (hole-already-present?
+          ;; expecting to have only one grid cell in the
+          ;; get-grid-cells call!
+          (exists (flip instance-of? 'hole)
+                  (grid-get (level-grid lvl)
+                            (car (get-grid-cells p
+                                                 x-offset: hole-x-offset
+                                                 y-offset: -1
+                                                 height:   1))))))
+    (if (not hole-already-present?)
+        (let* ((x (+ (player-x p) hole-x-offset))
+               (y (- (player-y p) 2))
+               (h (new hole x y 2 2)))
+          (and (within-grid-bounds? h)
+               (level-add! h lvl))))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -374,7 +374,8 @@
 (define-method (resolve-collision (hb handbar) (h human-like) level k)
   (human-like-can-use-rope?-set! h (handbar-y hb))
   ;; the human can fall from where he is...
-  (human-like-can-go-down?-set! h (human-like-x h)))
+  (if (not (human-like-can-go-forward? h))
+      (human-like-can-go-down?-set! h (human-like-x h))))
 (define-method (resolve-collision (h human-like) (hb handbar) level k)
   (resolve-collision hb h level k))
 
@@ -390,7 +391,9 @@
          (vx (point-x velo))
          (vy (point-y velo)))
     (cond
-     ((not (zero? vx))
+     ((and (not (zero? vx))
+           (not (human-like-stuck-in-hole? h))
+           (human-like-can-walk? h))
       (let* ((h.x (human-like-x h))
              (h.w (human-like-width h))
              (w.x (wall-x w))
@@ -401,7 +404,7 @@
                                       (- (+ h.x h.w (- w.x))))
                             0)))
         ;; ensure here that the walk flag is set to #t to walk back
-        (human-like-can-walk?-set! h #t)
+        ;;(human-like-can-walk?-set! h #t)
         ;; and move back the character to be in front of the wall
         (human-like-velocity-set! h new-velo)
         (move! h level
@@ -431,9 +434,10 @@
           (else (human-like-facing-direction obj))))
 
 (define (human-like-can-go-forward? h)
-  (or (human-like-can-walk? h)
-      (and (human-like-can-use-rope? h)
-           (not (human-like-droped-rope? h)))))
+  (and (not (human-like-stuck-in-hole? h))
+       (or (human-like-can-walk? h)
+           (and (human-like-can-use-rope? h)
+                (not (human-like-droped-rope? h))))))
 
 (define (walk-cycle! p)
   (let* ((cycling-delta 5)
@@ -484,6 +488,19 @@
 (define (fall-cycle! p)
   (human-like-state-set! p 'jumping))
 
+(define (dying-cycle! p)
+  (let* ((cycling-delta 10)
+         (cycle-length (* 2 cycling-delta)))
+    (update! p player walk-cycle-state
+             (lambda (s) (modulo (+ s 1) cycle-length)))
+    (let ((next-state
+           (case (quotient (player-walk-cycle-state p) cycling-delta)
+             ((0) 'left)
+             ((1) 'right)
+             (else (error "Invalid player walk cycle state")))))
+      (human-like-facing-direction-set! p next-state)
+      (human-like-state-set! p 'jumping))))
+
 (define (reset-walk-cycle! hum-like)
   ;; leave the direction unchanged...
   (human-like-walk-cycle-state-set! hum-like 0)
@@ -491,16 +508,18 @@
 
 (define-method (change-state! (p human-like))
   (let* ((v (moving-velocity p)))
-    (cond ((and (not (zero? (point-x v)))
-                (human-like-can-walk? p))
-           (walk-cycle! p))
-          ((human-like-can-use-rope? p)
-           (if (not (zero? (point-x v)))
-               (rope-cycle! p)
-               'keep-same-state^_^))
-          ((not (human-like-can-go-forward? p)) (fall-cycle! p))
-          ((not (zero? (point-y v))) (ascend-cycle! p))
-          (else (reset-walk-cycle! p)))))
+    (cond
+     ((human-like-stuck-in-hole? p) (dying-cycle! p))
+     ((and (not (zero? (point-x v)))
+           (human-like-can-walk? p))
+      (walk-cycle! p))
+     ((human-like-can-use-rope? p)
+      (if (not (zero? (point-x v)))
+          (rope-cycle! p)
+          'keep-same-state^_^))
+     ((not (human-like-can-go-forward? p)) (fall-cycle! p))
+     ((not (zero? (point-y v))) (ascend-cycle! p))
+     (else (reset-walk-cycle! p)))))
 
 (define-method (change-state! (obj game-object))
   'do-nothing)
@@ -549,13 +568,24 @@
         (let ((modified-velocity (moving-velocity obj)))
           (change-state! obj)
           (point-add! obj modified-velocity)
-          (pp `(player moved to (,(point-x obj) ,(point-y obj))
-                       with velocity: (,(point-x modified-velocity)
-                                       ,(point-y modified-velocity))))
+;;           (pp `(player moved to (,(point-x obj) ,(point-y obj))
+;;                        with velocity: (,(point-x modified-velocity)
+;;                                        ,(point-y modified-velocity))))
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
-          (pp `(after validation (,(point-x obj) ,(point-y obj))))
+;;           (pp `(after validation (,(point-x obj) ,(point-y obj))))
           (grid-update (level-grid level) obj)
-          (let ((objects-below     (get-objects-below obj level)))
+          (let* ((objects-below (get-objects-below obj level))
+                 ;; if above a hole, then there *should* also be a wall
+                 ;; there since hole are constucted on top of wall objects...
+                 (above-a-hole?
+                  (cond ((exists (flip instance-of? 'hole) objects-below)
+                         => (lambda (h)
+                              (= (human-like-x obj) (hole-x h))))
+                        (else #f))))
+;;             (pp `(,(map (lambda (x) (cons (game-object-id x)
+;;                                           (get-class-id x)))
+;;                         objects-below)
+;;                   above-a-hole? => ,above-a-hole?))
             
             ;; Object state reset
             (set-fields! obj human-like
@@ -576,7 +606,11 @@
                           (fix-obj-y-pos! obj))
                       ;; reset the drop rope flag when above a wall
                       (human-like-droped-rope?-set! obj #f)
-                      (human-like-can-walk?-set! obj #t))))
+                      ;; if above a hole, human-like falls!
+                      (human-like-can-walk?-set! obj (not above-a-hole?))
+                      ;; only set here and unset when player revives...
+                      (if above-a-hole?
+                       (human-like-stuck-in-hole?-set! obj #t)))))
              objects-below)
 
             ;; Perform collision detection / resolution
