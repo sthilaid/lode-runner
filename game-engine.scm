@@ -228,10 +228,16 @@
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
                                  self (gensym 'wall) x y w h))))
 
-(define-class hole  (stage)
+(define-class hole  (stage statefull)
+  (slot: contained-object?)
+  (slot: appear-cycle-state)
   (constructor:
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
-                                 self (gensym 'hole) x y w h))))
+                                 self (gensym 'hole) x y w h)
+           (set-fields! self hole
+             ((contained-object? #f)
+              (state 0)
+              (appear-cycle-state 0))))))
 
 (define-class ladder (stage)
   (constructor:
@@ -306,9 +312,10 @@
 
 (define (level-delete! obj lvl)
   (update! lvl level objects
-           (lambda (objs)
-             (list-remove (lambda (obj2) (eq? obj obj2)) objs)))
-  (level-cache-remove! (game-object-id obj) level))
+           (lambda (objs) (list-remove eq? obj objs)))
+  (level-cache-remove! obj lvl)
+  (set-fields! obj game-object ((width 0) (height 0)))
+  (grid-update (level-grid lvl) obj))
 
 (define (level-get id level)
   (cond ((table-ref (level-obj-cache level) id #f) => identity)
@@ -424,7 +431,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
-;;; Movement
+;;; Object state management
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -510,7 +517,7 @@
   (human-like-walk-cycle-state-set! hum-like 0)
   (human-like-state-set! hum-like 'waiting))
 
-(define-method (change-state! (p human-like))
+(define-method (change-state! (p human-like) level)
   (let* ((v (moving-velocity p)))
     (cond
      ((human-like-stuck-in-hole? p) (dying-cycle! p))
@@ -525,10 +532,27 @@
      ((not (zero? (point-y v))) (ascend-cycle! p))
      (else (reset-walk-cycle! p)))))
 
-(define-method (change-state! (obj game-object))
+;;; hole state management
+
+(define-method (change-state! (h hole) level)
+  (let* ((cycling-delta 10)
+         (cycle-length (* 10 cycling-delta)))
+    (if (>= (hole-appear-cycle-state h) cycle-length)
+        (die h level)
+        (begin
+          (update! h hole appear-cycle-state (curry2 + 1))
+          (hole-state-set! h (/ (hole-appear-cycle-state h)
+                                cycle-length))))))
+
+(define-method (change-state! (obj game-object) level)
   'do-nothing)
 
-;;; Movement implementation
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Movement
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; (move! obj level k) where k is the continuation of the move! call
 (define-generic move!)
@@ -570,7 +594,7 @@
              (allowed-to-move!? obj))
         ;; the allowed-to-move!? might have changed the velocity!
         (let ((modified-velocity (moving-velocity obj)))
-          (change-state! obj)
+          (change-state! obj level)
           (point-add! obj modified-velocity)
 ;;           (pp `(player moved to (,(point-x obj) ,(point-y obj))
 ;;                        with velocity: (,(point-x modified-velocity)
@@ -584,7 +608,8 @@
                  (above-a-hole?
                   (cond ((exists (flip instance-of? 'hole) objects-below)
                          => (lambda (h)
-                              (= (human-like-x obj) (hole-x h))))
+                              (and (= (human-like-x obj) (hole-x h))
+                                   h)))
                         (else #f))))
 ;;             (pp `(,(map (lambda (x) (cons (game-object-id x)
 ;;                                           (get-class-id x)))
@@ -613,7 +638,9 @@
                       (human-like-can-walk?-set! obj (not above-a-hole?))
                       ;; only set here and unset when player revives...
                       (if above-a-hole?
-                       (human-like-stuck-in-hole?-set! obj #t)))))
+                          (begin
+                            (hole-contained-object?-set! above-a-hole? obj)
+                            (human-like-stuck-in-hole?-set! obj #t))))))
              objects-below)
 
             ;; Perform collision detection / resolution
@@ -622,9 +649,30 @@
                           (resolve-collision obj col-obj level k))
                         colliding-objects))))
         ;; resets the object state
-        (change-state! obj))
+        (change-state! obj level))
     (k #t)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Objects death... sniff...
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-generic die)
+
+(define-method (die (p player) level)
+  (pp `(decrease number of lives))
+  (pp `(create next-instance?))
+  (call-next-method))
+
+(define-method (die (h hole) level)
+  (cond ((hole-contained-object? h)
+         => (lambda (obj) (die obj level))))
+  (call-next-method))
+
+(define-method (die (obj game-object) level)
+  (pp `(,(game-object-id obj) died!))
+  (level-delete! obj level))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -633,39 +681,50 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-generic animate)
+
 (define-method (animate (p player) level)
   (call/cc (lambda (k)
              (if (not (human-like-can-go-forward? p))
                  (player-velocity-set!
                   p (new point 0 (- player-movement-speed))))
              (move! p level k))))
+
+(define-method (animate (h hole) level)
+  (change-state! h level))
+
 (define-method (animate (x game-object) level)
   'do-nothing)
 
 (define (process-key key-sym level)
   ;; the keysym are defined in the user-interface module
   (let ((player (level-get 'player level)))
-   (case key-sym
-     [(left)  (player-velocity-set! player
-                                    (new point (- player-movement-speed) 0))]
-     [(right) (player-velocity-set! player
-                                    (new point player-movement-speed 0))]
-     [(up)    (player-velocity-set! player
-                                    (new point 0 player-movement-speed))]
-     [(down)
-      (if (human-like-can-use-rope? player)
-          (player-droped-rope?-set! player #t))
-      (player-velocity-set! player (new point 0 (- player-movement-speed)))]
-     [(shoot-left)  (generate-hole player 'left  level)]
-     [(shoot-right) (generate-hole player 'right level)])))
+    (if player
+        (case key-sym
+          [(left)
+           (player-velocity-set! player
+                                 (new point (- player-movement-speed) 0))]
+          [(right)
+           (player-velocity-set! player
+                                 (new point player-movement-speed 0))]
+          [(up)
+           (player-velocity-set! player
+                                 (new point 0 player-movement-speed))]
+          [(down)
+           (if (human-like-can-use-rope? player)
+               (player-droped-rope?-set! player #t))
+           (player-velocity-set! player
+                                 (new point 0 (- player-movement-speed)))]
+          [(shoot-left)  (generate-hole player 'left  level)]
+          [(shoot-right) (generate-hole player 'right level)]))))
 
 (define (advance-frame! level keys)
   ;; not sure what is the good approach at moving objects. The player
   ;; speed is reset every frame.
-  (let ((player (level-get 'player level)))
-    (player-velocity-set! player point-zero))
+  (cond ((level-get 'player level) =>
+         (lambda (player) (player-velocity-set! player point-zero))))
+  
   (for-each (flip process-key level) keys)
-  (for-each (flip animate level) (filter human-like? (level-objects level)))
+  (for-each (flip animate level) (level-objects level))
   )
 
 
@@ -698,16 +757,18 @@
 (define-generic render)
 
 (define-method (render (lvl level))
-  ;;(render-grid)
-  (for-each render (level-objects lvl))
-  (render (level-get 'player lvl)))
+  ;;(render-grid) it is expected that the object list is ordered with
+  ;; increasing layer order...
+  (for-each render (level-objects lvl)))
 
 (define-method (render (w wall))
   (render-object w wall 'pink 'wall))
 
-(define-method (render (h hole))
-  (receive (x y w h) (grid-coord->world-coord h)
-    (render-hole x y w h)))
+(define-method (render (hl hole))
+  (receive (x y w h) (grid-coord->world-coord hl)
+    (let ((height (exact->inexact (* h (hole-state hl)))))
+      (render-hole x y w h)
+      (draw-textured-object wall 'pink 'wall x y w height))))
 
 (define-method (render (g gold))
   (render-object g gold 'regular 'gold))
