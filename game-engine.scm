@@ -373,6 +373,7 @@
 ;; Handbar collisions
 (define-method (resolve-collision (hb handbar) (h human-like) level k)
   (human-like-can-use-rope?-set! h (handbar-y hb))
+  ;; the human can fall from where he is...
   (human-like-can-go-down?-set! h (human-like-x h)))
 (define-method (resolve-collision (h human-like) (hb handbar) level k)
   (resolve-collision hb h level k))
@@ -627,7 +628,8 @@
      [(up)    (player-velocity-set! player
                                     (new point 0 player-movement-speed))]
      [(down)
-      (player-droped-rope?-set! player #t)
+      (if (human-like-can-use-rope? player)
+          (player-droped-rope?-set! player #t))
       (player-velocity-set! player (new point 0 (- player-movement-speed)))]
      [(shoot-left)  (generate-hole player 'left  level)]
      [(shoot-right) (generate-hole player 'right level)])))
