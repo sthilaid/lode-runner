@@ -28,7 +28,7 @@
 
 (define (load-player mat i j)
   (let* ((x j) (y i)
-         (player (new player x y (new point 0 0))))
+         (player (new player x y)))
     (for-each (lambda (cell)
                 (let ((x (grid-cell-i cell))
                       (y (grid-cell-j cell)))
@@ -160,9 +160,15 @@
                     (loop i (+ j 1) (cons object acc))
                     (loop i (+ j 1) acc)))
               (loop (+ i 1) 0 acc))
-          (let* ((grid (make-grid))
+          (let* ((level-name (path-strip-directory
+                              (path-strip-extension filename)))
+                 (grid (make-grid))
                  (bottom-wall (new wall 0 0 grid-width 1))
-                 (all-objects (cons bottom-wall acc)))
+                 (all-objects (cons bottom-wall acc))
+                 (number-of-gold (fold-l (lambda (acc x)
+                                           (if (gold? x) (+ acc 1) acc))
+                                         0
+                                         all-objects)))
             ;; move up by one all the objects to leave
             ;; room for the bottom wall
             (for-each (lambda (obj)
@@ -170,10 +176,17 @@
                       acc)
             (for-each (lambda (obj) (grid-update grid obj))
                       all-objects)
-            (new level 
-                 (path-strip-directory (path-strip-extension filename)) ; name
-                 grid                   ; grid
-                 (quick-sort < = > all-objects accessor: get-layer)  ; objects
-                 (make-table test: eq?) ; obj-cache
-                 0                      ; score
-                 ))))))
+            ;; the player start pos must be retrieved *after* the
+            ;; objects were lifted up of 1 grid cell...
+            (let ((player-start
+                  (cond ((exists player? all-objects)
+                         => (lambda (p) (new point (player-x p) (player-y p))))
+                        (else (error "No player found in the level "
+                                     level-name)))))
+             (new level 
+                  level-name
+                  grid                  ; grid
+                  (quick-sort < = > all-objects accessor: get-layer) ; objects
+                  player-start          ; start pos
+                  number-of-gold        ; gold-left
+                  )))))))

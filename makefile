@@ -4,7 +4,7 @@ SOUND_FILES = $(wildcard sounds/*.wav)
 
 add-presufix = $(foreach f, $(3), $(1)$(f)$(2))
 
-FONT_IMAGES   = wall ladder handbar gold player bb_fonts
+FONT_IMAGES   = wall ladder handbar gold player title_bar bb_fonts
 
 SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
 GL_FILES      = opengl.scm glu.scm

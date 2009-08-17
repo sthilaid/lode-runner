@@ -258,8 +258,8 @@
   (slot: can-use-rope?) ; #f or contains the y pos of the colliding handbar
   (slot: can-walk?)        ; boolean
   (slot: droped-rope?)     ; boolean
-  (slot: stuck-in-hole?) ; boolean
-  (slot: facing-direction)
+  (slot: stuck-in-hole?)   ; boolean
+  (slot: facing-direction) ; left / right
   (slot: walk-cycle-state)
   (constructor: (lambda (self x0 y0 initial-velocity id)
                   (init! cast: '(game-object * * * * *)
@@ -285,9 +285,9 @@
 
 (define-class player (human-like)
   (slot: walk-cycle-state)
-  (constructor: (lambda (self x0 y0 initial-velocity)
+  (constructor: (lambda (self x0 y0)
                   (init! cast: '(human-like * * * *)
-                         self x0 y0 initial-velocity 'player))))
+                         self x0 y0 (new point 0 0) 'player))))
 
 (define-class gui (game-object)
   (slot: visible?)
@@ -315,7 +315,20 @@
   (slot: grid)
   (slot: objects)
   (slot: obj-cache)
-  (slot: score))
+  (slot: score)
+  (slot: player-start-pos)
+  (slot: gold-left)
+  (slot: lives)
+  (constructor: (lambda (self name grid objects start-pos gold-left)
+                  (set-fields! self level
+                    ((name name)
+                     (grid grid)
+                     (objects objects)
+                     (obj-cache (make-table test: eq?))
+                     (score 0)
+                     (player-start-pos start-pos)
+                     (gold-left gold-left)
+                     (lives 3))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -712,6 +725,9 @@
 (define-method (die (g gold) level)
   (let ((score-value 200))
     (update! level level score (lambda (x) (+ x score-value)))
+    (update! level level gold-left (lambda (x) (- x 1)))
+    (if (zero? (level-gold-left level))
+        'make-visible-the-escape-ladder!) ;; <- TODO
     (level-add! (new label
                      (number->string score-value)
                      (point-x g) (point-y g)
@@ -722,8 +738,12 @@
     (call-next-method)))
 
 (define-method (die (p player) level)
-  (pp `(decrease number of lives))
-  (pp `(create next-instance?))
+  (update! level level lives (lambda (x) (- x 1)))
+  (if (zero? (level-lives level))
+      (game-over!)
+      (let ((start-pos (level-player-start-pos level)))
+        (level-add! (new player (point-x start-pos) (point-y start-pos))
+                    level)))
   (call-next-method))
 
 (define-method (die (h hole) level)
@@ -824,11 +844,26 @@
        (for i 0 (< i grid-width)
             (draw-grid-point (* i grid-cell-w) (* j grid-cell-h)))))
 
+(define (render-title-bar level)
+  (let ((x 0)
+        (y (* grid-height grid-cell-h))
+        (w 384)
+        (h 8))
+   (draw-textured-object title_bar 'black 'bar x y w h)
+   (render-string 32 y (number->string (level-score level)) 'white)
+   (render-string 88 y "???" 'white)
+   (render-string 162 y "999999" 'red)
+   (render-string 232 y "01" 'white)
+   (render-string 281 y (number->string (level-lives level)) 'white)
+   (render-string 321 y "000000" 'white)))
+
 (define-generic render)
 
 (define-method (render (lvl level))
-  ;;(render-grid) it is expected that the object list is ordered with
-  ;; increasing layer order...
+  (render-title-bar lvl)
+  
+  ;; it is expected that the object list is ordered with increasing
+  ;; layer order...
   (for-each render (level-objects lvl)))
 
 (define-method (render (w wall))
