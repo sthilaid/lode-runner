@@ -289,6 +289,26 @@
                   (init! cast: '(human-like * * * *)
                          self x0 y0 initial-velocity 'player))))
 
+(define-class gui (game-object)
+  (slot: visible?)
+  ;;(slot: zoom-ratio)
+  (constructor: (lambda (self id x y visible?)
+                  ;; FIXME: usage of zeros can be potentially buggy?
+                  (init! cast: '(game-object * * * * *)
+                         self id x y 0 0)
+                  (set-fields! self gui ((visible? visible?))))))
+
+(define-class label (gui)
+  (slot: text)
+  (slot: color)
+  (slot: properties)
+  (constructor: (lambda (self text x y color property-list)
+                  (init! cast: '(gui * * * *)
+                         self (gensym 'label) x y #t)
+                  (set-fields! self label
+                    ((text text)
+                     (properties property-list)
+                     (color color))))))
 
 (define-class level ()
   (slot: name)
@@ -357,6 +377,25 @@
           (and (within-grid-bounds? h)
                (level-add! h lvl))))))
 
+;;; Text label property functions
+
+;; hehe, just to look better in the instantiation code
+(define property-list list)
+
+(define (lifetime framecount)
+  (let ((x 0))
+   (lambda (label level)
+     (set! x (+ x 1))
+     (if (>= x framecount)
+         (die label level)))))
+
+(define (flash frame-interval)
+  (let ((x 0))
+    (lambda (label level)
+      (set! x (modulo (+ x 1) frame-interval))
+      (if (zero? x)
+          (update! label label visible? (lambda (v?) (not v?)))))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -395,6 +434,11 @@
   (human-like-can-climb-up?-set! h (ladder-x l)))
 (define-method (resolve-collision (h human-like) (l ladder) level k)
   (resolve-collision l h level k))
+
+(define-method (resolve-collision (h human-like) (g gold) level k)
+  (die g level))
+(define-method (resolve-collision (g gold) (h human-like) level k)
+  (resolve-collision h g level k))
 
 ;; Wall collisions
 (define-method (resolve-collision (h human-like) (w wall) level k)
@@ -656,6 +700,7 @@
         (change-state! obj level))
     (k #t)))
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Objects death... sniff...
@@ -663,6 +708,18 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-generic die)
+
+(define-method (die (g gold) level)
+  (let ((score-value 200))
+    (update! level level score (lambda (x) (+ x score-value)))
+    (level-add! (new label
+                     (number->string score-value)
+                     (point-x g) (point-y g)
+                     'red
+                     (property-list (lifetime 120)
+                                    (flash 10)))
+                level)
+    (call-next-method)))
 
 (define-method (die (p player) level)
   (pp `(decrease number of lives))
@@ -699,6 +756,10 @@
 
 (define-method (animate (h hole) level)
   (change-state! h level))
+
+(define-method (animate (l label) level)
+  (for-each (lambda (p) (p l level))
+            (label-properties l)))
 
 (define-method (animate (x game-object) level)
   'do-nothing)
@@ -790,3 +851,8 @@
 
 (define-method (render (l ladder))
   (render-object l ladder 'regular 'ladder))
+
+(define-method (render (l label))
+  (if (gui-visible? l)
+      (receive (x y w h) (grid-coord->world-coord l)
+        (render-string x y (label-text l) (label-color l)))))
