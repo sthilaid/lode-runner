@@ -79,6 +79,9 @@ generated/font-%.scm: fonts/%.ppm user-interface-images.scm
 	mkdir -p generated
 	gsi user-interface-images -e "(generate-font-file \"$(<)\")"
 
+static: $(GAME_FILES)
+	gsc -exe -o lode-runner -cc-options "$(INCLUDE_OPTIONS)" -ld-options "$(LD_OPTIONS)" $(GAME_FILES)
+
 ### "included" macro dependant scheme source files
 
 user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
