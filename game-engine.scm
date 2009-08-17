@@ -602,15 +602,7 @@
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
 ;;           (pp `(after validation (,(point-x obj) ,(point-y obj))))
           (grid-update (level-grid level) obj)
-          (let* ((objects-below (get-objects-below obj level))
-                 ;; if above a hole, then there *should* also be a wall
-                 ;; there since hole are constucted on top of wall objects...
-                 (above-a-hole?
-                  (cond ((exists (flip instance-of? 'hole) objects-below)
-                         => (lambda (h)
-                              (and (= (human-like-x obj) (hole-x h))
-                                   h)))
-                        (else #f))))
+          (let* ((objects-below (get-objects-below obj level)))
 ;;             (pp `(,(map (lambda (x) (cons (game-object-id x)
 ;;                                           (get-class-id x)))
 ;;                         objects-below)))
@@ -620,7 +612,8 @@
               ((can-walk?     #f)
                (can-climb-up? #f)
                (can-go-down?  #f)
-               (can-use-rope? #f)))
+               (can-use-rope? #f)
+               (stuck-in-hole? #f)))
 
             ;; must be performed *before* the collision detection
             ;; because of the position may be ajusted 
@@ -632,19 +625,30 @@
                      ((instance-of? x 'wall)
                       (if (<= (point-y modified-velocity) 0)
                           (fix-obj-y-pos! obj))
+                      (human-like-can-walk?-set! obj #t)
                       ;; reset the drop rope flag when above a wall
-                      (human-like-droped-rope?-set! obj #f)
-                      ;; if above a hole, human-like falls!
-                      (human-like-can-walk?-set! obj (not above-a-hole?))
-                      ;; only set here and unset when player revives...
-                      (if above-a-hole?
-                          (begin
-                            (hole-contained-object?-set! above-a-hole? obj)
-                            (human-like-stuck-in-hole?-set! obj #t))))))
+                      (human-like-droped-rope?-set! obj #f))))
              objects-below)
 
             ;; Perform collision detection / resolution
-            (let ((colliding-objects (detect-collisions obj level)))
+            (let* ((colliding-objects (detect-collisions obj level))
+                   (above-a-hole?
+                    (cond ((exists (flip instance-of? 'hole)
+                                   (set-union eq?
+                                              objects-below
+                                              colliding-objects))
+                           => (lambda (h)
+                                (and (= (human-like-x obj) (hole-x h))
+                                     h)))
+                          (else #f))))
+              ;; if above a hole, human-like falls!
+              (update! obj human-like can-walk?
+                       (lambda (can-walk?) (and can-walk?
+                                                (not above-a-hole?))))
+              (if above-a-hole?
+                  (begin
+                    (hole-contained-object?-set! above-a-hole? obj)
+                    (human-like-stuck-in-hole?-set! obj #t)))
               (for-each (lambda (col-obj)
                           (resolve-collision obj col-obj level k))
                         colliding-objects))))
@@ -667,7 +671,11 @@
 
 (define-method (die (h hole) level)
   (cond ((hole-contained-object? h)
-         => (lambda (obj) (die obj level))))
+         => (lambda (obj)
+              (let ((coll-obj (detect-collisions h level)))
+                ;; ensure that the object is still in the hole...
+                (if (memq obj coll-obj)
+                    (die obj level))))))
   (call-next-method))
 
 (define-method (die (obj game-object) level)
@@ -721,7 +729,8 @@
   ;; not sure what is the good approach at moving objects. The player
   ;; speed is reset every frame.
   (cond ((level-get 'player level) =>
-         (lambda (player) (player-velocity-set! player point-zero))))
+         (lambda (player)
+           (player-velocity-set! player point-zero))))
   
   (for-each (flip process-key level) keys)
   (for-each (flip animate level) (level-objects level))
