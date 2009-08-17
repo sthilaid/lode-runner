@@ -223,23 +223,18 @@ end-of-c-declare
 
 ;; GL attributes (SDL_GLattr)
 
-(define SDL::gl-red-size            0)
-(define SDL::gl-green-size          1)
-(define SDL::gl-blue-size           2)
-(define SDL::gl-alpha-size          3)
-(define SDL::gl-buffer-size         4)
-(define SDL::gl-doublebuffer        5)
-(define SDL::gl-depth-size          6)
-(define SDL::gl-stencil-size        7)
-(define SDL::gl-accum-red-size      8)
-(define SDL::gl-accum-green-size    9)
-(define SDL::gl-accum-blue-size    10)
-(define SDL::gl-accum-alpha-size   11)
-(define SDL::gl-stereo             12)
-(define SDL::gl-multisamplebuffers 13)
-(define SDL::gl-multisamplesamples 14)
-(define SDL::gl-accelerated-visual 15)
-(define SDL::gl-swap-control       16)
+(define SDL::gl-red-size          0)
+(define SDL::gl-green-size        1)
+(define SDL::gl-blue-size         2)
+(define SDL::gl-alpha-size        3)
+(define SDL::gl-buffer-size       4)
+(define SDL::gl-doublebuffer      5)
+(define SDL::gl-depth-size        6)
+(define SDL::gl-stencil-size      7)
+(define SDL::gl-accum-red-size    8)
+(define SDL::gl-accum-green-size  9)
+(define SDL::gl-accum-blue-size  10)
+(define SDL::gl-accum-alpha-size 11)
 
 ;; SDL event type constants
 
@@ -390,13 +385,6 @@ char *SDL_GetError(void);
 
 (define SDL::enable-unicode
   (c-lambda (bool) int32 "SDL_EnableUNICODE"))
-
-(define SDL::gl-set-attributes
-  (c-lambda (int32 int32) int32  "SDL_GL_SetAttribute"))
-
-(define SDL::gl-get-attributes
-  (c-lambda (int32 int32) int32  "SDL_GL_SetAttribute"))
-
 
 ;;; (SDL::within-sdl-lifetime sdl-flags thunk)
 (define (SDL::within-sdl-lifetime sdl-flags thunk)

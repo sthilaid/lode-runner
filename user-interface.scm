@@ -1,5 +1,5 @@
 (include "scm-lib-macro.scm")
-(include "opengl-header.scm")
+(include "class_.scm")
 
 (define screen-max-x 388)
 (define screen-max-y 280)
@@ -7,18 +7,25 @@
 (define fullscreen-mode? #f)
 (define event-thread #f)
 (define display-fps? #f)
+(define current-level (make-parameter #f))
 
 (define (set-bg-color!)
   (glColor3f .3 .3 .3))
 
-(define (render-string x y str color)
+(define (render-string x y str color #!key centered?)
   (if (not (eq? color 'black))
-      (let loop ((i 0) (chars (string->list str)))
-        (if (pair? chars)
-            (begin
-              ;; expecting the bb_fonts to be loaded!
-              (draw-char bb_fonts color (car chars) x y i)
-              (loop (+ i 1) (cdr chars)))))))
+      (let ((centered-x
+             (if centered?
+                 (##flonum->fixnum (exact->inexact
+                                    (- x (* (string-length str) 1/2 8))))
+                 x))
+            (centered-y (if centered? (- y 4) y)))
+       (let loop ((i 0) (chars (string->list str)))
+         (if (pair? chars)
+             (begin
+               ;; expecting the bb_fonts to be loaded!
+               (draw-char bb_fonts color (car chars) centered-x centered-y i)
+               (loop (+ i 1) (cdr chars))))))))
 
 (define (render-fontified-sprite sprite-font x y state color)
   (if (not (eq? color 'black))
@@ -26,13 +33,13 @@
 
 (define (render-hole x y w h)
   ;;(set-bg-color!)
-    (glColor3f 0. 1. 0.)
-    (glBegin GL_TRIANGLE_STRIP)
-    (glVertex2i x y)
-    (glVertex2i (+ x w) y)
-    (glVertex2i x (+ y h))
-    (glVertex2i (+ x w) (+ y h))
-    (glEnd))
+  (glColor3f 0. 1. 0.)
+  (glBegin GL_TRIANGLE_STRIP)
+  (glVertex2i x y)
+  (glVertex2i (+ x w) y)
+  (glVertex2i x (+ y h))
+  (glVertex2i (+ x w) (+ y h))
+  (glEnd))
 
 (define (draw-grid-point x y)
   (glColor3f 1. 1. 1.)
@@ -46,6 +53,31 @@
          (glVertex2i x (- y 2)))
   (glEnd))
 
+(define (render-pause-screen)
+  (let ((w screen-max-x)
+        (h (- screen-max-y 24))) ;; <- FIXME: 16 px too much on top of screen?
+    (glColor4f 0.1 0.1 0.1 0.5)
+    (glBegin GL_QUADS)
+    (glVertex2i 0 0)
+    (glVertex2i 0 h)
+    (glVertex2i w h)
+    (glVertex2i w 0)
+    (glEnd)
+    )
+
+  (let ((x (/ screen-max-x 2))
+        (y (/ screen-max-y 2))
+        (scale-factor 3.))
+    (glMatrixMode GL_MODELVIEW)
+    (glPushMatrix)
+    (glLoadIdentity)
+    (glTranslatef (exact->inexact x) (exact->inexact y) 0.)
+    (glScalef scale-factor scale-factor 1.)
+    (render-string 0 0  "PAUSE" 'red centered?: #t)
+    (glPopMatrix))
+  
+  )
+
 (define (render-scene sdl-screen level)
   (SDL::with-locked-surface
    sdl-screen
@@ -55,6 +87,9 @@
 
      ;; Draw background stuff
      (render level)
+
+     (if (level-paused? (current-level))
+         (render-pause-screen))
 
      ;;draw frame-rate just over the green line
      (if display-fps?
@@ -95,9 +130,11 @@
       [(key-down-arrow)   (key-down-table-add! 'down        #t)]
       [(key-left-control) (key-down-table-add! 'shoot-left  #t)]
       [(key-left-alt)     (key-down-table-add! 'shoot-right #t)]
+      [(key-p)            (update! (current-level) level paused?
+                                   (lambda (p?) (not p?)))]
       [(key-f)            (set! display-fps? (not display-fps?))]
-      [(key-l)            (set! fullscreen-mode? (not fullscreen-mode?))
-       (pp fullscreen-mode?)]
+;;       [(key-l)            (set! fullscreen-mode? (not fullscreen-mode?))
+;;        (pp fullscreen-mode?)]
       [(key-q)            (request-exit)])
     ))
 
@@ -109,6 +146,7 @@
       [(key-right-arrow)  (key-down-table-reset-key 'right)]
       [(key-up-arrow)     (key-down-table-reset-key 'up)]
       [(key-down-arrow)   (key-down-table-reset-key 'down)]
+      [(key-p)            (key-down-table-reset-key 'pause)]
       [(key-left-control) (key-down-table-reset-key 'shoot-left)]
       [(key-left-alt)     (key-down-table-reset-key 'shoot-right)])))
 
@@ -126,7 +164,7 @@
 (define (->video-resize evt-struct)
   (let ((w (SDL::resize-w evt-struct))
         (h (SDL::resize-h evt-struct)))
-    (SDL::gl-set-attributes SDL::gl-swap-control 0)
+    ;;(SDL::gl-set-attributes SDL::gl-swap-control 0)
     ;;(SDL::gl-set-attributes SDL::gl-doublebuffer 0)
     (SDL::set-video-mode w h 32 (get-video-flags))
     (init-GL w h)
@@ -169,7 +207,6 @@
             (thread-sleep! 0.01)
             (poll-loop (SDL::poll-event evt-struct)))))))
 
-(c-declare "int argc = 0;")
 (define (init-GL w h)
   (glPointSize 1.)
   (glDisable GL_POINT_SMOOTH)
@@ -183,8 +220,6 @@
   (reshape w h)
   )
 
-(define debug-current-level #f)
-
 (define (start-threads!)
   ;;(set! simulation-thread (make-thread (game-loop (current-thread))))
   (set! event-thread      (make-thread event-thread-thunk))
@@ -197,7 +232,7 @@
   (SDL::set-window-caption "Space Invaders" "Space Invaders")
   (SDL::set-window-icon (SDL::load-bmp-file "sprites/lode-runner-icon.bmp") #f)
 
-  (SDL::gl-set-attributes SDL::gl-swap-control 0)
+  ;;(SDL::gl-set-attributes SDL::gl-swap-control 0)
   ;;(SDL::gl-set-attributes SDL::gl-doublebuffer 0)
   
   (let ((screen (SDL::set-video-mode screen-max-x screen-max-y 32
@@ -221,7 +256,7 @@
              ;; main loop with framerate calculation
              (let loop ((render-init-time (time->seconds (current-time)))
                         (level (load-level "data/level1.scm")))
-               (set! debug-current-level level)
+               (current-level level) ; FIXME!! dont do this every frame...
                (if exit-requested? (quit))
                (advance-frame! level (key-down-table-keys))
                (render-scene screen level)

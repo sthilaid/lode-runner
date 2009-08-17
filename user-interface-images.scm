@@ -16,7 +16,7 @@
                                                    font-id ".scm"))
      (lambda ()
        (pretty-print `(begin (include "../declarations.scm")
-                             (include "../opengl-header.scm")
+                             ;;(include "../opengl-header.scm")
                              (include "../texture-macro.scm")
                              (include "../font-macro.scm")
                              (define-symmetric-font ,font-id ,@args)))))))

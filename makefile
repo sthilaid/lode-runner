@@ -6,16 +6,17 @@ add-presufix = $(foreach f, $(3), $(1)$(f)$(2))
 
 FONT_IMAGES   = wall ladder handbar gold player title_bar bb_fonts
 
-SCM_LIB_FILES = scm-lib.scm scm-lib-macro.scm
-GL_FILES      = opengl.scm glu.scm
+SCM_LIB_FILES = scm-lib.scm
+FORMAT_FILES  = format.scm
+FFI_FILES     = opengl.scm glu.scm sdl-interface.scm
 FONT_FILES    = ppm-reader.scm texture.scm sprite.scm font.scm
 IMAGE_FILES   = $(call add-presufix,generated/font-,.scm,$(FONT_IMAGES))
 ENGINE_FILES  = game-engine.scm level-loader.scm
-UI_FILES      = sdl-interface.scm user-interface.scm
+UI_FILES      = user-interface.scm
 PROFILING_FILES = statprof.scm
 
-DEVEL_FILES = $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES) $(PROFILING_FILES)
-GAME_FILES =  $(SCM_LIB_FILES) $(GL_FILES) $(FONT_FILES) $(IMAGE_FILES) $(ENGINE_FILES) $(UI_FILES) $(PROFILING_FILES)
+DEVEL_FILES = $(SCM_LIB_FILES) $(FORMAT_FILES) $(FFI_FILES) $(FONT_FILES) $(IMAGE_FILES) $(PROFILING_FILES)
+GAME_FILES =  $(SCM_LIB_FILES) $(FORMAT_FILES) $(FFI_FILES) $(FONT_FILES) $(IMAGE_FILES) $(ENGINE_FILES) $(PROFILING_FILES)
 
 ## compilers
 GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug
@@ -64,7 +65,7 @@ LD_OPTIONS = $(LD_OPTIONS_COMMON) $(LD_OPTIONS_LIN)
 
 all: welcome run-game
 
-devel: $(DEVEL_FILES:.scm=.o1) $(ENGINE_FILES) $(UI_FILES:.scm=.o1)
+devel: $(DEVEL_FILES:.scm=.o1) $(ENGINE_FILES) $(UI_FILES)
 	gsi -:dar $^ -e '(main)'
 
 run-game: $(GAME_FILES:.scm=.o1)
@@ -88,8 +89,9 @@ user-interface-images.o1: texture-macro.scm font-macro.scm scm-lib-macro.scm
 user-interface.o1: scm-lib-macro.scm opengl-header.scm
 game-engine.o1 game-engine.scm: scm-lib-macro.scm class.scm class_.scm
 level-loader.o1 level-loader.scm: class_.scm
+scm-lib.o1: scm-lib-macro.scm
 opengl.o1: opengl-header.scm
-glu.o1: glu-header.scm
+glu.o1: opengl-header.scm glu-header.scm
 $(IMAGE_FILES:.scm=.o1): opengl-header.scm texture-macro.scm font-macro.scm
 $(GAME_FILES): declarations.scm
 

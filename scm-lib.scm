@@ -358,9 +358,9 @@
   (set! current-mode gather-init-data)
   dispatcher)
 
-(define (create-bounded-simple-moving-avg bound)
+(define (create-bounded-simple-moving-avg bound #!key init-value)
   (define data '())
-  (define SMA 'N/A)
+  (define SMA (if init-value init-value 'N/A))
   (define current-mode #f)
   (define max -inf.0)
   (define min +inf.0)

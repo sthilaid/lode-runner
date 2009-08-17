@@ -3,7 +3,7 @@
 (include "class.scm")
 
 ;; FPS is calculated in the user interface
-(define FPS (create-bounded-simple-moving-avg 5))
+(define FPS (create-bounded-simple-moving-avg 5 init-value: 60.))
 
 ;; Note: The player movement speed must be multipliable to give 1 so
 ;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
@@ -319,6 +319,8 @@
   (slot: player-start-pos)
   (slot: gold-left)
   (slot: lives)
+  (slot: time-left)
+  (slot: paused?)
   (constructor: (lambda (self name grid objects start-pos gold-left)
                   (set-fields! self level
                     ((name name)
@@ -328,7 +330,9 @@
                      (score 0)
                      (player-start-pos start-pos)
                      (gold-left gold-left)
-                     (lives 3))))))
+                     (lives 3)
+                     (time-left 60.)
+                     (paused? #f))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -784,7 +788,7 @@
 (define-method (animate (x game-object) level)
   'do-nothing)
 
-(define (process-key key-sym level)
+(define (process-game-key key-sym level)
   ;; the keysym are defined in the user-interface module
   (let ((player (level-get 'player level)))
     (if player
@@ -812,10 +816,15 @@
   (cond ((level-get 'player level) =>
          (lambda (player)
            (player-velocity-set! player point-zero))))
-  
-  (for-each (flip process-key level) keys)
-  (for-each (flip animate level) (level-objects level))
-  )
+
+  (if (not (level-paused? level))
+      (begin
+        (update! level level time-left (lambda (dt) (- dt (fl/ 1. (FPS)))))
+        (if (<= (level-time-left level) 0.)
+            (game-over! 'timeout)
+            (begin
+              (for-each (flip process-game-key level) keys)
+              (for-each (flip animate level) (level-objects level)))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -844,18 +853,27 @@
        (for i 0 (< i grid-width)
             (draw-grid-point (* i grid-cell-w) (* j grid-cell-h)))))
 
+(define (format-score x)
+  (if (= x 0)
+      "000000"
+      (let ((pad (max (- 6
+                         (##flonum->fixnum (round (/ (log x) (log 10))))
+                         1)
+                      0)))
+        (string-append (make-string pad #\0) (format "~D" x)))))
+
 (define (render-title-bar level)
   (let ((x 0)
         (y (* grid-height grid-cell-h))
         (w 384)
         (h 8))
    (draw-textured-object title_bar 'black 'bar x y w h)
-   (render-string 32 y (number->string (level-score level)) 'white)
-   (render-string 88 y "???" 'white)
-   (render-string 162 y "999999" 'red)
+   (render-string 32 y (format-score (level-score level)) 'white)
+   (render-string 88 y (format "~0,2F" (level-time-left level)) 'white)
+   (render-string 162 y (format-score 999999) 'red)
    (render-string 232 y "01" 'white)
    (render-string 281 y (number->string (level-lives level)) 'white)
-   (render-string 321 y "000000" 'white)))
+   (render-string 321 y (format-score 0) 'white)))
 
 (define-generic render)
 
@@ -871,7 +889,8 @@
 
 (define-method (render (hl hole))
   (receive (x y w h) (grid-coord->world-coord hl)
-    (let ((height (exact->inexact (* h (hole-state hl)))))
+           (let ((height (##flonum->fixnum
+                          (exact->inexact (* h (hole-state hl))))))
       (render-hole x y w h)
       (draw-textured-object wall 'pink 'wall x y w height))))
 
