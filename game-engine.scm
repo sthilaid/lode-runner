@@ -9,6 +9,7 @@
 ;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
 ;; ensures that the player always falls in holes on the ground...
 (define player-movement-speed 2/8)
+(define hole-generation-dt 1)
 
 (enum background-layer
       stage-layer
@@ -92,9 +93,13 @@
 (define (grid-cell-eq? c1 c2) (and (= (grid-cell-i c1) (grid-cell-i c2))
                                    (= (grid-cell-j c1) (grid-cell-j c2))))
 
-(define (grid-get grid cell) (matrix2d-get grid
-                                           (grid-cell-i cell)
-                                           (grid-cell-j cell)))
+(define (grid-get grid cell)
+  (if (and (< (grid-cell-i cell) grid-width)
+           (< (grid-cell-j cell) grid-height))
+      (matrix2d-get grid
+                    (grid-cell-i cell)
+                    (grid-cell-j cell))
+      '()))
 
 ;; updates the game-object's grid cells
 (define (grid-update grid obj)
@@ -376,23 +381,44 @@
          (< y grid-height)
          (>= y 0))))
 
-(define (generate-hole p direction lvl)
-  (let* ((hole-x-offset (cadr (assq direction `((left -2) (right 2)))))
-         (hole-already-present?
-          ;; expecting to have only one grid cell in the
-          ;; get-grid-cells call!
-          (exists (flip instance-of? 'hole)
-                  (grid-get (level-grid lvl)
-                            (car (get-grid-cells p
+(define generate-hole
+  (let ((last-hole-creation-time 0.)) ; private local var...
+    (lambda (p direction lvl)
+      ;; only create a hole if none where created for
+      ;; hole-generation-dt secs...
+      (let ((now (time->seconds (current-time))))
+        (if (> (- now last-hole-creation-time)
+               hole-generation-dt)
+            (let* ((hole-x-offset (cdr (assq direction
+                                             `((left . -2) (right . 2)))))
+                   ;; objects that collides with the potential hole,
+                   ;; classified per grid cells
+                   (objects-colliding-per-grid-cell
+                    (map (curry2 grid-get (level-grid lvl))
+                                 (get-grid-cells p
                                                  x-offset: hole-x-offset
                                                  y-offset: -1
-                                                 height:   1))))))
-    (if (not hole-already-present?)
-        (let* ((x (+ (player-x p) hole-x-offset))
-               (y (- (player-y p) 2))
-               (h (new hole x y 2 2)))
-          (and (within-grid-bounds? h)
-               (level-add! h lvl))))))
+                                                 width: 2
+                                                 height: 1)))
+                   (can-create-hole?
+                    (and
+                     ;; every grid cell must possess a wall (so that
+                     ;; we dont create holes in thin air...
+                     (forall (curry2 exists (flip instance-of? 'wall))
+                             objects-colliding-per-grid-cell)
+                     ;; and we can't create holes on top of other
+                     ;; objects (holes, ladders, etc...)
+                     (forall (flip instance-of? 'wall)
+                             (fold-l (curry2* set-union eq?)
+                                     '()
+                                     objects-colliding-per-grid-cell)))))
+              (if can-create-hole?
+                  (let* ((x (+ (player-x p) hole-x-offset))
+                         (y (- (player-y p) 2))
+                         (h (new hole x y 2 2)))
+                    (set! last-hole-creation-time now)
+                    (and (within-grid-bounds? h)
+                         (level-add! h lvl))))))))))
 
 ;;; Text label property functions
 
