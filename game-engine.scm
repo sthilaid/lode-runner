@@ -235,7 +235,6 @@
                                  self (gensym 'wall) x y w h))))
 
 (define-class hole  (stage statefull)
-  (slot: contained-object?)
   (slot: appear-stage) ; \in {disappearing empty reappearing}
   (slot: appear-cycle-state)
   (slot: can-pass-through?) ; contains the object creation time or #f
@@ -244,12 +243,11 @@
    (lambda (self x y w h creator) (init! cast: '(stage * * * * *)
                                          self (gensym 'hole) x y w h)
            (set-fields! self hole
-             ((contained-object? #f)
-              (state 0)
-              (appear-stage 'disappearing)
+             ((state 0)
               (appear-cycle-state 0)
               (can-pass-through? (level-current-time (current-level)))
-              (creator creator))))))
+              (creator creator)))
+           (hole-disappearing! self))))
 
 (define-class ladder (stage)
   (constructor:
@@ -431,6 +429,13 @@
                     (human-like-shooting?-set! creator #t)
                     (and (within-grid-bounds? h)
                          (level-add! h lvl))))))))))
+
+(define (hole-disappearing? h) (eq? (hole-appear-stage h) 'disappearing))
+(define (hole-disappearing! h) (hole-appear-stage-set! h 'disappearing))
+(define (hole-empty? h) (eq? (hole-appear-stage h) 'empty))
+(define (hole-empty! h) (hole-appear-stage-set! h 'empty))
+(define (hole-reappearing? h) (eq? (hole-appear-stage h) 'reappearing))
+(define (hole-reappearing! h) (hole-appear-stage-set! h 'reappearing))
 
 ;;; Text label property functions
 
@@ -638,25 +643,25 @@
   (let* ((cycling-delta 10)
          (disappear-cycle-length (* 5 cycling-delta))
          (reappear-cycle-length (* 5 cycling-delta)))
-    (case (hole-appear-stage h)
-      ((disappearing)
+    (cond
+      ((hole-disappearing? h)
        (if (>= (hole-appear-cycle-state h) disappear-cycle-length)
            (begin (set-fields! h hole
-                    ((appear-stage 'empty)
-                     (can-pass-through? (level-current-time level))
+                    ((can-pass-through? (level-current-time level))
                      (state 0.)
                      (appear-cycle-state 0)))
+                  (hole-empty! h)
                   (human-like-shooting?-set! (hole-creator h) #f))
            (begin
              (update! h hole appear-cycle-state (curry2 + 1))
              (hole-state-set! h (- 1. (/ (hole-appear-cycle-state h)
                                          disappear-cycle-length))))))
-      ((empty)
+      ((hole-empty? h)
        (if (>= (- (level-current-time level) (hole-can-pass-through? h))
                hole-pass-through-dt)
-           (set-fields! h hole ((appear-stage 'reappearing)
-                                (can-pass-through? #f)))))
-      ((reappearing)
+           (begin (hole-reappearing! h)
+                  (hole-can-pass-through?-set! h #f))))
+      ((hole-reappearing? h)
        (if (>= (hole-appear-cycle-state h) reappear-cycle-length)
            (die h level)
            (begin
@@ -755,22 +760,29 @@
             ;; Perform collision detection / resolution
             (let* ((colliding-objects (detect-collisions obj level))
                    (above-a-hole?
-                    (cond ((exists (flip instance-of? 'hole)
-                                   (set-union eq?
-                                              objects-below
-                                              colliding-objects))
+                    (cond ((exists (flip instance-of? 'hole) objects-below)
+                           => (lambda (h)
+                                ;; ensure that the player is exactly
+                                ;; above the hole
+                                (and (= (human-like-x obj) (hole-x h))
+                                     h)))
+                          (else #f)))
+                   (inside-a-hole?
+                    (cond ((exists (flip instance-of? 'hole) colliding-objects)
                            => (lambda (h)
                                 (and (= (human-like-x obj) (hole-x h))
                                      h)))
                           (else #f))))
               ;; if above a hole, human-like falls!
               (update! obj human-like can-walk?
-                       (lambda (can-walk?) (and can-walk?
-                                                (not above-a-hole?))))
-              (if above-a-hole?
-                  (begin
-                    (hole-contained-object?-set! above-a-hole? obj)
-                    (human-like-stuck-in-hole?-set! obj #t)))
+                       (lambda (can-walk?)
+                         (and can-walk?
+                              (not (and above-a-hole?
+                                        (hole-empty? above-a-hole?))))))
+              ;; FIXME: not perfect as the player will use the
+              ;; die-cycle state while falling in a hole (but doesnt
+              ;; look so bad)
+              (if inside-a-hole? (human-like-stuck-in-hole?-set! obj #t))
               (for-each (lambda (col-obj)
                           (resolve-collision obj col-obj level k))
                         colliding-objects))))
@@ -812,12 +824,8 @@
   (call-next-method))
 
 (define-method (die (h hole) level)
-  (cond ((hole-contained-object? h)
-         => (lambda (obj)
-              (let ((coll-obj (detect-collisions h level)))
-                ;; ensure that the object is still in the hole...
-                (if (memq obj coll-obj)
-                    (die obj level))))))
+  ;; kill all who dare stand in the hole! (Mwahahaha!)
+  (for-each (flip die level) (filter human-like? (detect-collisions h level)))
   (call-next-method))
 
 (define-method (die (obj game-object) level)
