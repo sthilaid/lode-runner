@@ -236,16 +236,20 @@
 
 (define-class hole  (stage statefull)
   (slot: contained-object?)
+  (slot: appear-stage) ; \in {disappearing empty reappearing}
   (slot: appear-cycle-state)
-  (slot: can-pass-through?)
+  (slot: can-pass-through?) ; contains the object creation time or #f
+  (slot: creator) ; object that created the hole (or #f)
   (constructor:
-   (lambda (self x y w h) (init! cast: '(stage * * * * *)
-                                 self (gensym 'hole) x y w h)
+   (lambda (self x y w h creator) (init! cast: '(stage * * * * *)
+                                         self (gensym 'hole) x y w h)
            (set-fields! self hole
              ((contained-object? #f)
               (state 0)
+              (appear-stage 'disappearing)
               (appear-cycle-state 0)
-              (can-pass-through? #t))))))
+              (can-pass-through? (level-current-time (current-level)))
+              (creator creator))))))
 
 (define-class ladder (stage)
   (constructor:
@@ -269,6 +273,7 @@
   (slot: stuck-in-hole?)   ; boolean
   (slot: facing-direction) ; left / right
   (slot: walk-cycle-state)
+  (slot: shooting?)        ; boolean
   (constructor: (lambda (self x0 y0 initial-velocity id)
                   (init! cast: '(game-object * * * * *)
                          self id x0 y0 2 3)
@@ -282,7 +287,8 @@
                      (droped-rope? #f)
                      (stuck-in-hole? #f)
                      (facing-direction 'right)
-                     (walk-cycle-state 0))))))
+                     (walk-cycle-state 0)
+                     (shooting? #f))))))
 
 (define (fix-obj-y-pos! obj) (update! obj game-object y floor))
 
@@ -388,7 +394,7 @@
 
 (define generate-hole
   (let ((last-hole-creation-time -1.)) ; private local var...
-    (lambda (p direction lvl)
+    (lambda (p direction creator lvl)
       ;; only create a hole if none where created for
       ;; hole-generation-dt secs...
       (let ((now (level-current-time lvl)))
@@ -420,8 +426,9 @@
               (if can-create-hole?
                   (let* ((x (+ (player-x p) hole-x-offset))
                          (y (- (player-y p) 2))
-                         (h (new hole x y 2 2)))
+                         (h (new hole x y 2 2 creator)))
                     (set! last-hole-creation-time now)
+                    (human-like-shooting?-set! creator #t)
                     (and (within-grid-bounds? h)
                          (level-add! h lvl))))))))))
 
@@ -612,6 +619,7 @@
 (define-method (change-state! (p human-like) level)
   (let* ((v (moving-velocity p)))
     (cond
+     ((human-like-shooting? p) 'TODO:use-the-shooting-sprite!)
      ((human-like-stuck-in-hole? p) (dying-cycle! p))
      ((and (not (zero? (point-x v)))
            (human-like-can-walk? p))
@@ -628,13 +636,35 @@
 
 (define-method (change-state! (h hole) level)
   (let* ((cycling-delta 10)
-         (cycle-length (* 10 cycling-delta)))
-    (if (>= (hole-appear-cycle-state h) cycle-length)
-        (die h level)
-        (begin
-          (update! h hole appear-cycle-state (curry2 + 1))
-          (hole-state-set! h (/ (hole-appear-cycle-state h)
-                                cycle-length))))))
+         (disappear-cycle-length (* 5 cycling-delta))
+         (reappear-cycle-length (* 5 cycling-delta)))
+    (case (hole-appear-stage h)
+      ((disappearing)
+       (if (>= (hole-appear-cycle-state h) disappear-cycle-length)
+           (begin (set-fields! h hole
+                    ((appear-stage 'empty)
+                     (can-pass-through? (level-current-time level))
+                     (state 0.)
+                     (appear-cycle-state 0)))
+                  (human-like-shooting?-set! (hole-creator h) #f))
+           (begin
+             (update! h hole appear-cycle-state (curry2 + 1))
+             (hole-state-set! h (- 1. (/ (hole-appear-cycle-state h)
+                                         disappear-cycle-length))))))
+      ((empty)
+       (if (>= (- (level-current-time level) (hole-can-pass-through? h))
+               hole-pass-through-dt)
+           (set-fields! h hole ((appear-stage 'reappearing)
+                                (can-pass-through? #f)))))
+      ((reappearing)
+       (if (>= (hole-appear-cycle-state h) reappear-cycle-length)
+           (die h level)
+           (begin
+             (update! h hole appear-cycle-state (curry2 + 1))
+             (hole-state-set! h (/ (hole-appear-cycle-state h)
+                                   reappear-cycle-length))))))))
+
+;;; Fallback state management
 
 (define-method (change-state! (obj game-object) level)
   'do-nothing)
@@ -822,7 +852,7 @@
 (define (process-game-key key-sym level)
   ;; the keysym are defined in the user-interface module
   (let ((player (level-get 'player level)))
-    (if player
+    (if (and player (not (player-shooting? player)))
         (case key-sym
           [(left)
            (player-velocity-set! player
@@ -838,8 +868,8 @@
                (player-droped-rope?-set! player #t))
            (player-velocity-set! player
                                  (new point 0 (- player-movement-speed)))]
-          [(shoot-left)  (generate-hole player 'left  level)]
-          [(shoot-right) (generate-hole player 'right level)]))))
+          [(shoot-left)  (generate-hole player 'left  player level)]
+          [(shoot-right) (generate-hole player 'right player level)]))))
 
 (define (advance-frame! level keys)
   ;; not sure what is the good approach at moving objects. The player
