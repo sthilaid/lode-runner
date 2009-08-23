@@ -201,23 +201,6 @@
                                 (id id)))
                   (game-object-grid-cells-set! self (get-grid-cells self)))))
 
-;; (define game-object-grid-cells-set!
-;;   (let ((old-fn game-object-grid-cells-set!))
-;;     (lambda (obj new-cells)
-;;       (pp `(setting cells to ,(game-object-id obj) to ,new-cells))
-;;       (old-fn obj new-cells))))
-
-;; The internal positions are flonums but, the received positions are
-;; fixnums
-;; (define game-object-x
-;;   (let ((old-fn game-object-x))
-;;     (lambda (obj) (let ((x (old-fn obj)))
-;;                     (if (flonum? x) (##flonum->fixnum (round x)) x)))))
-;; (define game-object-y
-;;   (let ((old-fn game-object-y))
-;;     (lambda (obj) (let ((y (old-fn obj)))
-;;                     (if (flonum? y) (##flonum->fixnum (round y)) y)))))
-
 (define-class stage (game-object)
   (slot: neighbours)
   (constructor: (lambda (self id x y w h)
@@ -393,6 +376,7 @@
 (define generate-hole
   (let ((last-hole-creation-time -1.)) ; private local var...
     (lambda (p direction creator lvl)
+
       ;; only create a hole if none where created for
       ;; hole-generation-dt secs...
       (let ((now (level-current-time lvl)))
@@ -423,7 +407,7 @@
                                      objects-colliding-per-grid-cell)))))
               (if can-create-hole?
                   (let* ((x (+ (player-x p) hole-x-offset))
-                         (y (- (player-y p) 2))
+                         (y (floor (- (player-y p) 2)))
                          (h (new hole x y 2 2 creator)))
                     (set! last-hole-creation-time now)
                     (human-like-shooting?-set! creator #t)
@@ -480,27 +464,40 @@
 
 (define-generic resolve-collision)
 
-;; Handbar collisions
+;;; Handbar collisions
 (define-method (resolve-collision (hb handbar) (h human-like) level k)
   (human-like-can-use-rope?-set! h (handbar-y hb))
+
+  ;; adjust the hl position, it is important to notice here that this
+  ;; necessitates a grid update!
+  (human-like-y-set! h (- (handbar-y hb) 2))
+  (grid-update (level-grid level) h)
+
+  ;; FIXME: since collision resoluiont happens *after* player/hole
+  ;; relation managment, this flag must be reset here since no hole
+  ;; can co-exist with a rope... ;)
+  (human-like-stuck-in-hole?-set! h #f)
+
   ;; the human can fall from where he is...
   (if (not (human-like-can-go-forward? h))
       (human-like-can-go-down?-set! h (human-like-x h))))
+
 (define-method (resolve-collision (h human-like) (hb handbar) level k)
   (resolve-collision hb h level k))
 
-;; Ladder collisions
+;;; Ladder collisions
 (define-method (resolve-collision (l ladder) (h human-like) level k)
   (human-like-can-climb-up?-set! h (ladder-x l)))
 (define-method (resolve-collision (h human-like) (l ladder) level k)
   (resolve-collision l h level k))
 
+;;; Gold collisions
 (define-method (resolve-collision (h human-like) (g gold) level k)
   (die g level))
 (define-method (resolve-collision (g gold) (h human-like) level k)
   (resolve-collision h g level k))
 
-;; Wall collisions
+;;; Wall collisions
 (define-method (resolve-collision (h human-like) (w wall) level k)
   (let* ((velo (human-like-velocity h))
          (vx (point-x velo))
@@ -513,7 +510,7 @@
              (h.w (human-like-width h))
              (w.x (wall-x w))
              (w.w (wall-width w))
-             (original-direction (get-direction velo))
+             (original-direction (human-like-get-direction h))
              (new-velo (new point (if (< vx 0)
                                       (+ w.x w.w (- h.x))
                                       (- (+ h.x h.w (- w.x))))
@@ -530,6 +527,7 @@
 (define-method (resolve-collision (w wall) (h human-like) level k)
   (resolve-collision h w level))
 
+;;; All other collisions
 (define-method (resolve-collision x y lvl k)
   'todo)
 
@@ -543,10 +541,11 @@
 
 ;;; Human-like state machine management
 
-(define (get-direction velocity)
+(define (human-like-get-direction obj)
+  (let ((velocity (human-like-velocity obj)))
     (cond ((< (point-x velocity) 0) 'left)
           ((> (point-x velocity) 0) 'right)
-          (else (human-like-facing-direction obj))))
+          (else (human-like-facing-direction obj)))))
 
 (define (human-like-can-go-forward? h)
   (and (not (human-like-stuck-in-hole? h))
@@ -566,11 +565,10 @@
              ((2) 'standing-up)
              ((3) 'standing-right)
              (else (error "Invalid player walk cycle state")))))
-      (human-like-facing-direction-set! p
-                                        (get-direction
-                                         (human-like-velocity p)))
+      (human-like-facing-direction-set! p (human-like-get-direction p))
       (human-like-state-set! p next-state))))
 
+(define rope-states '(rope-1-right rope-2-right rope-1-left rope-2-left))
 (define (rope-cycle! p)
   (let* ((cycling-delta 5)
          (cycle-length (* 4 cycling-delta)))
@@ -583,8 +581,7 @@
              ((2) 'rope-1-left)
              ((3) 'rope-2-left) 
              (else (error "Invalid player rope cycle state")))))
-      (human-like-facing-direction-set! p (get-direction
-                                           (human-like-velocity p)))
+      (human-like-facing-direction-set! p (human-like-get-direction p))
       (human-like-state-set! p next-state))))
 
 (define (ascend-cycle! p)
@@ -630,9 +627,11 @@
            (human-like-can-walk? p))
       (walk-cycle! p))
      ((human-like-can-use-rope? p)
-      (if (not (zero? (point-x v)))
-          (rope-cycle! p)
-          'keep-same-state^_^))
+       (if (or (not (zero? (point-x v)))
+               ;; need to initialize the cycle rope cycle
+               (not (memq (human-like-state p) rope-states)))
+           (rope-cycle! p)
+           'keep-same-state^_^))
      ((not (human-like-can-go-forward? p)) (fall-cycle! p))
      ((not (zero? (point-y v))) (ascend-cycle! p))
      (else (reset-walk-cycle! p)))))
@@ -657,6 +656,8 @@
              (hole-state-set! h (- 1. (/ (hole-appear-cycle-state h)
                                          disappear-cycle-length))))))
       ((hole-empty? h)
+       ;; FIXME: Should the use of time be replace here by usage of
+       ;; frame instead (like all the other state macines)?
        (if (>= (- (level-current-time level) (hole-can-pass-through? h))
                hole-pass-through-dt)
            (begin (hole-reappearing! h)
@@ -706,10 +707,6 @@
      ;; Can the player move in x?
      ((and (human-like-can-go-forward? hum)
            (not (zero? v-x)))
-      ;; set the y position of the player to correspond to the rope
-      ;; FIXME: This operation (- y 2) might be dangerous...?
-      (cond ((human-like-can-use-rope? hum)
-             => (lambda (y) (human-like-y-set! hum (- y 2)))))
       #t)
      (else
       (human-like-velocity-set! hum point-zero)
@@ -723,16 +720,9 @@
         (let ((modified-velocity (moving-velocity obj)))
           (change-state! obj level)
           (point-add! obj modified-velocity)
-;;           (pp `(player moved to (,(point-x obj) ,(point-y obj))
-;;                        with velocity: (,(point-x modified-velocity)
-;;                                        ,(point-y modified-velocity))))
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
-;;           (pp `(after validation (,(point-x obj) ,(point-y obj))))
           (grid-update (level-grid level) obj)
           (let* ((objects-below (get-objects-below obj level)))
-;;             (pp `(,(map (lambda (x) (cons (game-object-id x)
-;;                                           (get-class-id x)))
-;;                         objects-below)))
             
             ;; Object state reset
             (set-fields! obj human-like
@@ -829,7 +819,7 @@
   (call-next-method))
 
 (define-method (die (obj game-object) level)
-  (pp `(,(game-object-id obj) died!))
+  (pp `(,(game-object-id obj) died at (,(point-x obj) ,(point-y obj))))
   (level-delete! obj level))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
