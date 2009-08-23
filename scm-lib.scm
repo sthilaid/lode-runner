@@ -297,6 +297,17 @@
 (define (1- x) (- x 1))
 (define (one? x) (eq? x 1))
 
+(define (clamp-floor epsilon min-value n)
+  (if (>= (- n epsilon) min-value)
+      n
+      min-value))
+(define (clamp-ceil epsilon max-value n)
+  (if (<= (+ n epsilon) max-value)
+      n
+      max-value))
+(define (clamp min-value max-value n #!optional (epsilon 0))
+  (clamp-ceil epsilon max-value (clamp-floor epsilon min-value n)))
+
 (define (exactisize n)
   (inexact->exact (floor n)))
 

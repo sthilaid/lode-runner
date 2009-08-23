@@ -9,7 +9,8 @@
 ;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
 ;; ensures that the player always falls in holes on the ground...
 (define player-movement-speed 2/8)
-(define hole-generation-dt 1)
+(define hole-generation-dt 1.)
+(define hole-pass-through-dt 2.)
 
 (enum background-layer
       stage-layer
@@ -236,13 +237,15 @@
 (define-class hole  (stage statefull)
   (slot: contained-object?)
   (slot: appear-cycle-state)
+  (slot: can-pass-through?)
   (constructor:
    (lambda (self x y w h) (init! cast: '(stage * * * * *)
                                  self (gensym 'hole) x y w h)
            (set-fields! self hole
              ((contained-object? #f)
               (state 0)
-              (appear-cycle-state 0))))))
+              (appear-cycle-state 0)
+              (can-pass-through? #t))))))
 
 (define-class ladder (stage)
   (constructor:
@@ -324,8 +327,9 @@
   (slot: player-start-pos)
   (slot: gold-left)
   (slot: lives)
-  (slot: time-left)
+  (slot: time-limit)
   (slot: paused?)
+  (slot: current-time)
   (constructor: (lambda (self name grid objects start-pos gold-left)
                   (set-fields! self level
                     ((name name)
@@ -336,8 +340,9 @@
                      (player-start-pos start-pos)
                      (gold-left gold-left)
                      (lives 3)
-                     (time-left 60.)
-                     (paused? #f))))))
+                     (time-limit 60.)
+                     (paused? #f)
+                     (current-time 0.))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -382,13 +387,13 @@
          (>= y 0))))
 
 (define generate-hole
-  (let ((last-hole-creation-time 0.)) ; private local var...
+  (let ((last-hole-creation-time -1.)) ; private local var...
     (lambda (p direction lvl)
       ;; only create a hole if none where created for
       ;; hole-generation-dt secs...
-      (let ((now (time->seconds (current-time))))
-        (if (> (- now last-hole-creation-time)
-               hole-generation-dt)
+      (let ((now (level-current-time lvl)))
+        (if (>= (- now last-hole-creation-time)
+                hole-generation-dt)
             (let* ((hole-x-offset (cdr (assq direction
                                              `((left . -2) (right . 2)))))
                    ;; objects that collides with the potential hole,
@@ -845,8 +850,8 @@
 
   (if (not (level-paused? level))
       (begin
-        (update! level level time-left (lambda (dt) (- dt (fl/ 1. (FPS)))))
-        (if (<= (level-time-left level) 0.)
+        (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
+        (if (> (level-current-time level) (level-time-limit level))
             (game-over! 'timeout)
             (begin
               (for-each (flip process-game-key level) keys)
@@ -879,14 +884,29 @@
        (for i 0 (< i grid-width)
             (draw-grid-point (* i grid-cell-w) (* j grid-cell-h)))))
 
-(define (format-score x)
-  (if (= x 0)
-      "000000"
-      (let ((pad (max (- 6
-                         (##flonum->fixnum (round (/ (log x) (log 10))))
-                         1)
+(define (format-number width x)
+  (if (zero? x)
+      (make-string width #\0)
+      (let ((pad (max (fx- width
+                           (##flonum->fixnum
+                            (floor (fl/ (exact->inexact (log x)) (fllog 10.))))
+                           1)
                       0)))
-        (string-append (make-string pad #\0) (format "~D" x)))))
+        (string-append (make-string pad #\0) (number->string x)))))
+
+(define (format-score x)
+  (format-number 6 x))
+
+(define (format-time x)
+  (define exact-pad-wanted 2)
+  (define inexact-pad-wanted 2)
+  (let* ((exact-part (##flonum->fixnum x))
+         (exact-part-str (format-number 2 exact-part))
+         (flo-part (clamp 0. +inf.0 (- x exact-part) 0.01))
+         (flo-part-str (format-number 2 (##flonum->fixnum
+                                         (fl* (expt 10. inexact-pad-wanted)
+                                              flo-part)))))
+    (string-append  exact-part-str "." flo-part-str)))
 
 (define (render-title-bar level)
   (let ((x 0)
@@ -895,7 +915,9 @@
         (h 8))
    (draw-textured-object title_bar 'black 'bar x y w h)
    (render-string 32 y (format-score (level-score level)) 'white)
-   (render-string 88 y (format "~0,2F" (level-time-left level)) 'white)
+   (render-string 88 y (format-time (- (level-time-limit level)
+                                       (level-current-time level)))
+                  'white)
    (render-string 162 y (format-score 999999) 'red)
    (render-string 232 y "01" 'white)
    (render-string 281 y (number->string (level-lives level)) 'white)
