@@ -1,3 +1,4 @@
+
 ;; Very simple object system which focuses on runtime speed.
 
 (include "class_.scm")

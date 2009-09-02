@@ -9,6 +9,7 @@
 ;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
 ;; ensures that the player always falls in holes on the ground...
 (define player-movement-speed 2/8)
+(define robot-movement-speed 2/8)
 (define hole-generation-dt 1.)
 (define hole-pass-through-dt 2.)
 
@@ -719,6 +720,9 @@
         ;; the allowed-to-move!? might have changed the velocity!
         (let ((modified-velocity (moving-velocity obj)))
           (change-state! obj level)
+          (pp `(x: ,(point-x obj) y: ,(point-y obj)))
+          (pp `(vx: ,(point-x modified-velocity)
+                    vy: ,(point-y modified-velocity)))
           (point-add! obj modified-velocity)
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
           (grid-update (level-grid level) obj)
@@ -828,6 +832,22 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;;; AI
+
+(define (fetch-next-ai-move! robot level)
+  (define (mask-velo v)
+    (define (mask x val) (if (= x val) robot-movement-speed 0))
+    (let* ((vx (point-x v))
+           (vy (point-y v))
+           (dir (if (> vy vx) vy vx))
+           (mult (if (>= dir 0) 1 -1)))
+      (new point (* mult (mask vx dir)) (* mult (mask vy dir)))))
+  (let* ((p (level-get 'player level))
+         (velo (point-sub p robot)))
+    (robot-velocity-set! robot (mask-velo velo))))
+
+;;; Animation
+
 (define-generic animate)
 
 (define-method (animate (p player) level)
@@ -836,6 +856,14 @@
                  (player-velocity-set!
                   p (new point 0 (- player-movement-speed))))
              (move! p level k))))
+
+(define-method (animate (r robot) level)
+  (fetch-next-ai-move! r level)
+  (call/cc (lambda (k)
+             (if (not (human-like-can-go-forward? r))
+                 (robot-velocity-set!
+                  r (new point 0 (- robot-movement-speed))))
+             (move! r level k))))
 
 (define-method (animate (h hole) level)
   (change-state! h level))
@@ -978,6 +1006,9 @@
 
 (define-method (render (p player))
   (render-object p player (player-facing-direction p) (player-state p)))
+
+(define-method (render (r robot))
+  (render-object r player (robot-facing-direction r) (robot-state r)))
 
 (define-method (render (l ladder))
   (render-object l ladder 'regular 'ladder))
