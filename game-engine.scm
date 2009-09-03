@@ -237,6 +237,9 @@
   (constructor:
    (lambda (self x y h) (init! cast: '(stage * * * * *)
                                self (gensym 'ladder) x y 2 h))))
+
+(define-class clear-ladder (ladder))
+
 (define-class handbar (stage)
   (constructor:
    (lambda (self x y w) (init! cast: '(stage * * * * *)
@@ -318,7 +321,9 @@
   (slot: time-limit)
   (slot: paused?)
   (slot: current-time)
-  (constructor: (lambda (self name grid objects start-pos gold-left)
+  (slot: clear-ladder)
+  (constructor: (lambda (self name grid objects start-pos
+                              gold-left clear-ladder)
                   (set-fields! self level
                     ((name name)
                      (grid grid)
@@ -330,7 +335,8 @@
                      (lives 3)
                      (time-limit 60.)
                      (paused? #f)
-                     (current-time 0.))))))
+                     (current-time 0.)
+                     (clear-ladder clear-ladder))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -720,9 +726,6 @@
         ;; the allowed-to-move!? might have changed the velocity!
         (let ((modified-velocity (moving-velocity obj)))
           (change-state! obj level)
-          (pp `(x: ,(point-x obj) y: ,(point-y obj)))
-          (pp `(vx: ,(point-x modified-velocity)
-                    vy: ,(point-y modified-velocity)))
           (point-add! obj modified-velocity)
           (validate-grid-bounds! obj) ; make sure player stays in level bounds
           (grid-update (level-grid level) obj)
@@ -798,7 +801,7 @@
     (update! level level score (lambda (x) (+ x score-value)))
     (update! level level gold-left (lambda (x) (- x 1)))
     (if (zero? (level-gold-left level))
-        'make-visible-the-escape-ladder!) ;; <- TODO
+        (level-add! (level-clear-ladder level) level))
     (level-add! (new label
                      (number->string score-value)
                      (point-x g) (point-y g)
@@ -839,12 +842,20 @@
     (define (mask x val) (if (= x val) robot-movement-speed 0))
     (let* ((vx (point-x v))
            (vy (point-y v))
-           (dir (if (> vy vx) vy vx))
+           (dir (cond
+                 ((and (robot-can-go-down? robot)
+                       (< vy 0))
+                  vy)
+                 ((and (robot-can-climb-up? robot)
+                       (> vy 0))
+                  vy)
+                 (else (if (> vy vx) vy vx))))
            (mult (if (>= dir 0) 1 -1)))
       (new point (* mult (mask vx dir)) (* mult (mask vy dir)))))
-  (let* ((p (level-get 'player level))
+  #;(let* ((p (level-get 'player level))
          (velo (point-sub p robot)))
-    (robot-velocity-set! robot (mask-velo velo))))
+    (robot-velocity-set! robot (mask-velo velo)))
+  (robot-velocity-set! robot point-zero))
 
 ;;; Animation
 

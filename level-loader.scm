@@ -93,6 +93,17 @@
               (get-grid-cells ladder))
     ladder))
 
+(define (load-clear-ladder mat i j)
+  (let* ((x j)(y i)
+         (h (get-col-height mat x y ladder-load-id))
+         (ladder (new clear-ladder x y h)))
+    (for-each (lambda (cell)
+                (let ((x (grid-cell-i cell))
+                      (y (grid-cell-j cell)))
+                 (matrix2d-set! mat y x dummy-load-id)))
+              (get-grid-cells ladder))
+    ladder))
+
 (define (load-wall mat i j)
   (define (complete-wall-row? x y wished-width)
     (= (get-row-width mat x y brick-load-id) wished-width))
@@ -154,6 +165,8 @@
                             ((= id robot-load-id)   (load-robot mat i j))
                             ((= id handbar-load-id) (load-handbar mat i j))
                             ((= id ladder-load-id)  (load-ladder mat i j))
+                            ((= id clear-ladder-load-id)
+                             (load-clear-ladder mat i j))
                             ((= id brick-load-id)   (load-wall mat i j))
                             (else #f)))))
                 (if object
@@ -162,13 +175,22 @@
               (loop (+ i 1) 0 acc))
           (let* ((level-name (path-strip-directory
                               (path-strip-extension filename)))
+                 (clear-ladder (cond ((exists (flip instance-of? 'clear-ladder)
+                                              acc)
+                                      => identity)
+                                     (else (error "Not clear ladder "
+                                                  "found in level "
+                                                  level-name))))
                  (grid (make-grid))
                  (bottom-wall (new wall 0 0 grid-width 1))
                  (all-objects (cons bottom-wall acc))
                  (number-of-gold (fold-l (lambda (acc x)
                                            (if (gold? x) (+ acc 1) acc))
                                          0
-                                         all-objects)))
+                                         all-objects))
+                 (game-start-objects
+                  (filter (lambda (x) (not (instance-of? x 'clear-ladder)))
+                          all-objects)))
             ;; move up by one all the objects to leave
             ;; room for the bottom wall
             (for-each (lambda (obj)
@@ -186,7 +208,8 @@
              (new level 
                   level-name
                   grid                  ; grid
-                  (quick-sort < = > all-objects accessor: get-layer) ; objects
+                  (quick-sort < = > game-start-objects accessor: get-layer)
                   player-start          ; start pos
                   number-of-gold        ; gold-left
+                  clear-ladder
                   )))))))
