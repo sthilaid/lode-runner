@@ -95,7 +95,7 @@
 
 (define (load-clear-ladder mat i j)
   (let* ((x j)(y i)
-         (h (get-col-height mat x y ladder-load-id))
+         (h (get-col-height mat x y clear-ladder-load-id))
          (ladder (new clear-ladder x y h)))
     (for-each (lambda (cell)
                 (let ((x (grid-cell-i cell))
@@ -205,11 +205,11 @@
                          => (lambda (p) (new point (player-x p) (player-y p))))
                         (else (error "No player found in the level "
                                      level-name)))))
-             (new level 
-                  level-name
-                  grid                  ; grid
-                  (quick-sort < = > game-start-objects accessor: get-layer)
-                  player-start          ; start pos
-                  number-of-gold        ; gold-left
-                  clear-ladder
-                  )))))))
+              (new level 
+                   level-name
+                   grid                  ; grid
+                   (quick-sort < = > game-start-objects accessor: get-layer)
+                   player-start          ; start pos
+                   number-of-gold        ; gold-left
+                   clear-ladder
+                   )))))))

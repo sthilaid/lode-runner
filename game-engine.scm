@@ -130,10 +130,11 @@
 (define (grid-coord->world-coord rect)
   ;; objects are dropped down one level such that the bottom wall
   ;; doesn't get shown (see level-loader).
-  (values (* (point-x rect)       grid-cell-w)
-          (* (- (point-y rect) 1) grid-cell-h)
-          (* (rect-width rect)    grid-cell-w)
-          (* (rect-height rect)   grid-cell-h)))
+  (new rect
+       (* (point-x rect)       grid-cell-w)
+       (* (- (point-y rect) 1) grid-cell-h)
+       (* (rect-width rect)    grid-cell-w)
+       (* (rect-height rect)   grid-cell-h)))
 
 (define (validate-grid-bounds! obj)
   (update! obj rect x
@@ -259,6 +260,7 @@
   (slot: facing-direction) ; left / right
   (slot: walk-cycle-state)
   (slot: shooting?)        ; boolean
+  (slot: escaping?)        ; 3 states -> {#f possible escaping}
   (constructor: (lambda (self x0 y0 initial-velocity id)
                   (init! cast: '(game-object * * * * *)
                          self id x0 y0 2 3)
@@ -273,7 +275,8 @@
                      (stuck-in-hole? #f)
                      (facing-direction 'right)
                      (walk-cycle-state 0)
-                     (shooting? #f))))))
+                     (shooting? #f)
+                     (escaping? #f))))))
 
 (define (fix-obj-y-pos! obj) (update! obj game-object y floor))
 
@@ -498,6 +501,15 @@
 (define-method (resolve-collision (h human-like) (l ladder) level k)
   (resolve-collision l h level k))
 
+;;; Clear ladder collisions
+(define-method (resolve-collision (l clear-ladder) (p player) level k)
+  (if (not (player-escaping? p))
+      (player-escaping?-set! p 'possible))
+  (call-next-method))
+(define-method (resolve-collision (p player) (l clear-ladder) level k)
+  (resolve-collision l p level k))
+
+
 ;;; Gold collisions
 (define-method (resolve-collision (h human-like) (g gold) level k)
   (die g level))
@@ -628,6 +640,7 @@
 (define-method (change-state! (p human-like) level)
   (let* ((v (moving-velocity p)))
     (cond
+     ((human-like-escaping? p) (ascend-cycle! p))
      ((human-like-shooting? p) 'TODO:use-the-shooting-sprite!)
      ((human-like-stuck-in-hole? p) (dying-cycle! p))
      ((and (not (zero? (point-x v)))
@@ -738,6 +751,10 @@
                (can-go-down?  #f)
                (can-use-rope? #f)
                (stuck-in-hole? #f)))
+            ;; FIXME: Not clean! Should maybe abstract this more to
+            ;; have clean states between player and robots?
+            (if (not (eq? (player-escaping? obj) 'escaping))
+                (player-escaping?-set! obj #f))
 
             ;; must be performed *before* the collision detection
             ;; because of the position may be ajusted 
@@ -863,9 +880,13 @@
 
 (define-method (animate (p player) level)
   (call/cc (lambda (k)
-             (if (not (human-like-can-go-forward? p))
-                 (player-velocity-set!
-                  p (new point 0 (- player-movement-speed))))
+             (let ((v (cond
+                       ((eq? (player-escaping? p) 'escaping)
+                        (new point 0 player-movement-speed))
+                       ((not (human-like-can-go-forward? p))
+                        (new point 0 (- player-movement-speed)))
+                       (else (player-velocity p)))))
+               (player-velocity-set! p v))
              (move! p level k))))
 
 (define-method (animate (r robot) level)
@@ -898,6 +919,8 @@
            (player-velocity-set! player
                                  (new point player-movement-speed 0))]
           [(up)
+           (if (player-escaping? player)
+               (player-escaping?-set! player 'escaping))
            (player-velocity-set! player
                                  (new point 0 player-movement-speed))]
           [(down)
@@ -943,7 +966,11 @@
   foreground-layer)
 
 (define (render-object obj texture color char)
-  (receive (x y w h) (grid-coord->world-coord obj)
+  (let* ((world-coords (grid-coord->world-coord obj))
+         (x (rect-x world-coords))
+         (y (rect-y world-coords))
+         (w (rect-width world-coords))
+         (h (rect-height world-coords)))
     (draw-textured-object texture color char x y w h)))
 
 (define (render-grid)
@@ -1003,9 +1030,13 @@
   (render-object w wall 'pink 'wall))
 
 (define-method (render (hl hole))
-  (receive (x y w h) (grid-coord->world-coord hl)
-           (let ((height (##flonum->fixnum
-                          (exact->inexact (* h (hole-state hl))))))
+  (let* ((world-coords (grid-coord->world-coord hl))
+         (x (rect-x world-coords))
+         (y (rect-y world-coords))
+         (w (rect-width world-coords))
+         (h (rect-height world-coords)))
+    (let ((height (##flonum->fixnum
+                   (exact->inexact (* h (hole-state hl))))))
       (render-hole x y w h)
       (draw-textured-object wall 'pink 'wall x y w height))))
 
@@ -1026,5 +1057,9 @@
 
 (define-method (render (l label))
   (if (gui-visible? l)
-      (receive (x y w h) (grid-coord->world-coord l)
+      (let* ((world-coords (grid-coord->world-coord l))
+             (x (rect-x world-coords))
+             (y (rect-y world-coords))
+             (w (rect-width world-coords))
+             (h (rect-height world-coords)))
         (render-string x y (label-text l) (label-color l)))))
