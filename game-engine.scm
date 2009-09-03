@@ -323,6 +323,7 @@
   (slot: lives)
   (slot: time-limit)
   (slot: paused?)
+  (slot: state)
   (slot: current-time)
   (slot: clear-ladder)
   (constructor: (lambda (self name grid objects start-pos
@@ -338,6 +339,7 @@
                      (lives 3)
                      (time-limit 60.)
                      (paused? #f)
+                     (state 'in-game)
                      (current-time 0.)
                      (clear-ladder clear-ladder))))))
 
@@ -347,7 +349,27 @@
 (define (level-cache-remove! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj)))
 
+(define-macro (define-states class member state-values)
+    (define (accessor-name state)
+      (symbol-append class '- state '?))
+    (define (setter-name state)
+      (symbol-append class '- state '!))
+    `(begin
+       ,@(apply append
+                (map
+                 (lambda (val)
+                   (list
+                    `(define (,(accessor-name val) obj)
+                       (eq? (,(symbol-append class '- member) obj)
+                            ',val))
+                    `(define (,(setter-name val) obj)
+                       (,(symbol-append class '- member '-set!) obj ',val))))
+                 state-values))))
+
 ;;; Level interface
+
+(define-states level state (in-game game-over level-cleared))
+
 (define (level-add! obj lvl)
   ;; insert the object within the layer ordered list
   (level-objects-set! lvl (insert-in-ordered-list < obj (level-objects lvl)
@@ -507,7 +529,7 @@
         ((>= (player-y p) (+ (clear-ladder-y l)
                              (clear-ladder-height l)
                              (- (player-height p))))
-         (next-level!)))
+         (level-level-cleared! level)))
   (call-next-method))
 (define-method (resolve-collision (p player) (l clear-ladder) level k)
   (resolve-collision l p level k))
@@ -835,7 +857,7 @@
 (define-method (die (p player) level)
   (update! level level lives (lambda (x) (- x 1)))
   (if (zero? (level-lives level))
-      (game-over!)
+      (level-game-over! level)
       (let ((start-pos (level-player-start-pos level)))
         (level-add! (new player (point-x start-pos) (point-y start-pos))
                     level)))
@@ -941,15 +963,17 @@
   (cond ((level-get 'player level) =>
          (lambda (player)
            (player-velocity-set! player point-zero))))
-
-  (if (not (level-paused? level))
-      (begin
-        (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
-        (if (> (level-current-time level) (level-time-limit level))
-            (game-over! 'timeout)
-            (begin
-              (for-each (flip process-game-key level) keys)
-              (for-each (flip animate level) (level-objects level)))))))
+  (cond
+   ((level-paused? level) 'do-nothing)
+   ((level-game-over? level) 'restart-level) ;; TODO
+   ((level-level-cleared? level) 'switch-to-next-level) ;; TODO
+   (else
+    (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
+    (if (> (level-current-time level) (level-time-limit level))
+        (level-game-over! level)
+        (begin
+          (for-each (flip process-game-key level) keys)
+          (for-each (flip animate level) (level-objects level)))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1028,7 +1052,13 @@
   
   ;; it is expected that the object list is ordered with increasing
   ;; layer order...
-  (for-each render (level-objects lvl)))
+  (for-each render (level-objects lvl))
+
+  (cond
+   ((level-paused? lvl) (render-pause-screen))
+   ((level-game-over? lvl) '(render-game-over)) ;; TODO
+   ((level-level-cleared? lvl) '(render-next-level-anim)) ;; TODO??
+   ))
 
 (define-method (render (w wall))
   (render-object w wall 'pink 'wall))
