@@ -503,8 +503,11 @@
 
 ;;; Clear ladder collisions
 (define-method (resolve-collision (l clear-ladder) (p player) level k)
-  (if (not (player-escaping? p))
-      (player-escaping?-set! p 'possible))
+  (cond ((not (player-escaping? p)) (player-escaping?-set! p 'possible))
+        ((>= (player-y p) (+ (clear-ladder-y l)
+                             (clear-ladder-height l)
+                             (- (player-height p))))
+         (next-level!)))
   (call-next-method))
 (define-method (resolve-collision (p player) (l clear-ladder) level k)
   (resolve-collision l p level k))
@@ -640,7 +643,8 @@
 (define-method (change-state! (p human-like) level)
   (let* ((v (moving-velocity p)))
     (cond
-     ((human-like-escaping? p) (ascend-cycle! p))
+     ((eq? (human-like-escaping? p) 'escaping)
+      (ascend-cycle! p))
      ((human-like-shooting? p) 'TODO:use-the-shooting-sprite!)
      ((human-like-stuck-in-hole? p) (dying-cycle! p))
      ((and (not (zero? (point-x v)))
