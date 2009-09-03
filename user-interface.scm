@@ -88,9 +88,6 @@
      ;; Draw background stuff
      (render level)
 
-     (if (level-paused? (current-level))
-         (render-pause-screen))
-
      ;;draw frame-rate just over the green line
      (if display-fps?
          (render-string
