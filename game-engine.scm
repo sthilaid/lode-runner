@@ -312,10 +312,35 @@
                      (properties property-list)
                      (color color))))))
 
-(define-class level ()
+(define-class menu ()
   (slot: name)
-  (slot: grid)
   (slot: objects)
+  (constructor:
+   (lambda (self name objects)
+     (set-fields! self menu ((name name)
+                             (objects objects))))))
+
+(define-class option-menu (menu)
+  (slot: current-choice)
+  (slot: last-input-time)
+  (constructor:
+   (lambda (self name objects)
+                  (init! cast: '(menu * *) self name objects)
+                  (set-fields! self option-menu
+                               ((current-choice 0)
+                                (last-input-time 0))))))
+
+(define-class option-item ()
+  (slot: text)
+  (slot: action) ; (lambda (val) ...)
+  (slot: active?) ; bool
+  (constructor: (lambda (self text action)
+                  (set-fields! self option-item ((text text)
+                                                 (action action)
+                                                 (active? #f))))))
+
+(define-class level (menu)
+  (slot: grid)
   (slot: obj-cache)
   (slot: score)
   (slot: player-start-pos)
@@ -328,10 +353,9 @@
   (slot: clear-ladder)
   (constructor: (lambda (self name grid objects start-pos
                               gold-left clear-ladder)
+                  (init! cast: '(menu * *) self name objects)
                   (set-fields! self level
-                    ((name name)
-                     (grid grid)
-                     (objects objects)
+                    ((grid grid)
                      (obj-cache (make-table test: eq?))
                      (score 0)
                      (player-start-pos start-pos)
@@ -365,6 +389,51 @@
                     `(define (,(setter-name val) obj)
                        (,(symbol-append class '- member '-set!) obj ',val))))
                  state-values))))
+
+;;; Option menu interface
+
+(define (get-levels)
+  (map (lambda (l) (string-append "data/" l))
+       (filter (compose (flip string=? ".scm") path-extension)
+               (quick-sort string-ci<? string-ci=? string-ci>?
+                           (directory-files "data")))))
+(define (create-level-option level)
+  (new option-item
+       (path-strip-directory (path-strip-extension level))
+       (lambda ()
+         (with-exception-catcher
+          (lambda (e) (println "Could not load level "
+                               (path-strip-directory
+                                (path-strip-extension level))))
+          (lambda ()
+           (current-level (load-level level)))))))
+
+(define (create-level-choice-menu)
+  (let ((levels (map create-level-option (get-levels))))
+    (if (not (pair? levels)) (error "No level found in the data directory..."))
+    (let ((menu (new option-menu 'level-choice-menu levels)))
+      (option-menu-choose! menu 0)
+      menu)))
+
+(define (option-menu-choose! menu item-index)
+  (let* ((objs (option-menu-objects menu))
+         (item (list-ref objs item-index)))
+    (cond ((get-current-option-choice menu)
+           => (flip option-item-active?-set! #f)))
+    (option-menu-current-choice-set! menu item-index)
+    (option-item-active?-set! item #t)))
+
+(define (option-menu-choose-relative! menu op)
+  (option-menu-choose! menu (modulo (op (option-menu-current-choice menu))
+                                    (length (option-menu-objects menu)))))
+(define (option-menu-choose-prev! menu)
+  (option-menu-choose-relative! menu (flip - 1)))
+(define (option-menu-choose-next! menu)
+  (option-menu-choose-relative! menu (flip + 1)))
+
+(define (get-current-option-choice menu)
+  (cond ((option-menu-current-choice menu)
+         => (curry2 list-ref (option-menu-objects menu)))))
 
 ;;; Level interface
 
@@ -933,7 +1002,29 @@
 (define-method (animate (x game-object) level)
   'do-nothing)
 
-(define (process-game-key key-sym level)
+;;; Menu animation
+(define-generic process-key)
+(define-generic advance-frame!)
+
+(define-method (process-key key-sym (opt option-menu))
+  (let ((now (time->seconds (current-time))))
+    (if (> (- now (option-menu-last-input-time opt))
+           0.1)
+        (begin
+          (case key-sym
+            [(up) (option-menu-choose-prev! opt)]
+            [(down) (option-menu-choose-next! opt)]
+            [(enter) (let ((action (option-item-action
+                                    (get-current-option-choice opt))))
+                       (action))]
+            )
+          (option-menu-last-input-time-set! opt now)))))
+
+(define-method (advance-frame! (opt option-menu) keys-down keys-up)
+  (for-each (flip process-key opt) keys-up))
+
+;;; Level animation
+(define-method (process-key key-sym (level level))
   ;; the keysym are defined in the user-interface module
   (let ((player (level-get 'player level)))
     (if (and player (not (player-shooting? player)))
@@ -957,7 +1048,7 @@
           [(shoot-left)  (generate-hole player 'left  player level)]
           [(shoot-right) (generate-hole player 'right player level)]))))
 
-(define (advance-frame! level keys)
+(define-method (advance-frame! (level level) keys-down keys-up)
   ;; not sure what is the good approach at moving objects. The player
   ;; speed is reset every frame.
   (cond ((level-get 'player level) =>
@@ -966,13 +1057,15 @@
   (cond
    ((level-paused? level) 'do-nothing)
    ((level-game-over? level) 'restart-level) ;; TODO
-   ((level-level-cleared? level) 'switch-to-next-level) ;; TODO
+   ((level-level-cleared? level)
+    ;; TODO: score-calculation
+    (current-level (create-level-choice-menu)))
    (else
     (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
     (if (> (level-current-time level) (level-time-limit level))
         (level-game-over! level)
         (begin
-          (for-each (flip process-game-key level) keys)
+          (for-each (flip process-key level) keys-down)
           (for-each (flip animate level) (level-objects level)))))))
 
 
@@ -983,6 +1076,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-generic get-layer)
+(define-generic render)
+
+;;; Layer definitions
+
 (define-method (get-layer (h human-like))
   human-like-layer)
 ;; holes must be drawn above the stage objects (walls)
@@ -992,6 +1089,25 @@
   stage-layer)
 (define-method (get-layer (obj game-object))
   foreground-layer)
+
+;;; Option menu rendering
+
+(define-method (render (menu option-menu))
+  (let* ((x (/ (* grid-width grid-cell-w) 2))
+         (y (* grid-height grid-cell-h))
+         (delta-y (##inexact->exact (floor (/ y 20.)))))
+    (for-each-with-index
+     (lambda (i item)
+       (render-string x y "Choose your level" 'white centered?: #t)
+       (render-string x
+                      (- y (* i delta-y) 20)
+                      (option-item-text item)
+                      (if (option-item-active? item) 'green 'white)
+                      centered?: #t))
+     (option-menu-objects menu))
+))
+
+;;; Game level rendering
 
 (define (render-object obj texture color char)
   (let* ((world-coords (grid-coord->world-coord obj))
@@ -1044,8 +1160,6 @@
    (render-string 232 y "01" 'white)
    (render-string 281 y (number->string (level-lives level)) 'white)
    (render-string 321 y (format-score 0) 'white)))
-
-(define-generic render)
 
 (define-method (render (lvl level))
   (render-title-bar lvl)

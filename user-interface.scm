@@ -53,6 +53,24 @@
          (glVertex2i x (- y 2)))
   (glEnd))
 
+(define (center thunk)
+  (let ((x (/ screen-max-x 2))
+        (y (/ screen-max-y 2)))
+    (glMatrixMode GL_MODELVIEW)
+    (glPushMatrix)
+    ;;(glLoadIdentity)
+    (glTranslatef (exact->inexact x) (exact->inexact y) 0.)
+    (thunk)
+    (glPopMatrix)))
+
+(define (rescale scaling-factor thunk)
+  (glMatrixMode GL_MODELVIEW)
+  (glPushMatrix)
+  ;;(glLoadIdentity)
+  (glScalef scaling-factor scaling-factor 1.)
+  (thunk)
+  (glPopMatrix))
+
 (define (render-pause-screen)
   (let ((w screen-max-x)
         (h (- screen-max-y 24))) ;; <- FIXME: 16 px too much on top of screen?
@@ -64,19 +82,11 @@
     (glVertex2i w 0)
     (glEnd)
     )
-
-  (let ((x (/ screen-max-x 2))
-        (y (/ screen-max-y 2))
-        (scale-factor 3.))
-    (glMatrixMode GL_MODELVIEW)
-    (glPushMatrix)
-    (glLoadIdentity)
-    (glTranslatef (exact->inexact x) (exact->inexact y) 0.)
-    (glScalef scale-factor scale-factor 1.)
-    (render-string 0 0  "PAUSE" 'red centered?: #t)
-    (glPopMatrix))
-  
-  )
+  (center
+   (lambda ()
+     (rescale 3.
+              (lambda () 
+                (render-string 0 0  "PAUSE" 'red centered?: #t))))))
 
 (define (render-scene sdl-screen level)
   (SDL::with-locked-surface
@@ -113,6 +123,35 @@
     (glMatrixMode GL_MODELVIEW)
     (glLoadIdentity)))
 
+;;; Keyboard input management
+
+(define key-down-table (make-table test: eq?))
+(define (key-down-table-add! key action)
+  (table-set! key-down-table key action))
+(define (key-down-table-reset-key key)
+  (table-set! key-down-table key))
+
+(define (key-down-table-actions)
+  (map cdr (table->list key-down-table)))
+(define (key-down-table-keys)
+  (map car (table->list key-down-table)))
+
+(define key-up-table (make-table test: eq?))
+(define (key-up-table-add! key action)
+  (table-set! key-up-table key action))
+(define (key-up-table-reset-key key)
+  (table-set! key-up-table key))
+(define (key-up-table-actions)
+  (map cdr (table->list key-up-table)))
+(define (key-up-table-keys)
+  (map car (table->list key-up-table)))
+(define (key-up-table-reset!)
+  (set! key-up-table (make-table test: eq?)))
+
+(define (key-released key)
+  (key-down-table-reset-key key)
+  (key-up-table-add! key #t))
+
 (define (->unhandled  evt-struct)
   'todo)
 
@@ -127,6 +166,7 @@
       [(key-down-arrow)   (key-down-table-add! 'down        #t)]
       [(key-left-control) (key-down-table-add! 'shoot-left  #t)]
       [(key-left-alt)     (key-down-table-add! 'shoot-right #t)]
+      [(key-return)       (key-down-table-add! 'enter #t)]
       [(key-p)            (update! (current-level) level paused?
                                    (lambda (p?) (not p?)))]
       [(key-f)            (set! display-fps? (not display-fps?))]
@@ -139,17 +179,20 @@
   (let ((key-enum  (SDL::key-enum      evt-struct))
         (modifiers (SDL::key-modifiers evt-struct)))
     (case key-enum
-      [(key-left-arrow)   (key-down-table-reset-key 'left)]
-      [(key-right-arrow)  (key-down-table-reset-key 'right)]
-      [(key-up-arrow)     (key-down-table-reset-key 'up)]
-      [(key-down-arrow)   (key-down-table-reset-key 'down)]
-      [(key-p)            (key-down-table-reset-key 'pause)]
-      [(key-left-control) (key-down-table-reset-key 'shoot-left)]
-      [(key-left-alt)     (key-down-table-reset-key 'shoot-right)])))
+      [(key-left-arrow)   (key-released 'left)]
+      [(key-right-arrow)  (key-released 'right)]
+      [(key-up-arrow)     (key-released 'up)]
+      [(key-down-arrow)   (key-released 'down)]
+      [(key-p)            (key-released 'pause)]
+      [(key-left-control) (key-released 'shoot-left)]
+      [(key-left-alt)     (key-released 'shoot-right)]
+      [(key-return)       (key-released 'enter)])))
+
+
+;;; Main related stuff
 
 (define (->quit evt-struct)
   (request-exit))
-
 
 (define (get-video-flags)
   (bitwise-ior SDL::opengl
@@ -179,30 +222,12 @@
       (let ( (event-type (SDL::raw-event-type sdl-event-struct)) )
         (if (<= 0 event-type SDL::num-events)
             ((vector-ref xforms event-type) sdl-event-struct)
-            (->unhandled sdl-event-struct))))
-))
+            (->unhandled sdl-event-struct))))))
 
-(define key-down-table (make-table))
-(define (key-down-table-add! key action)
-  (table-set! key-down-table key action))
-(define (key-down-table-reset-key key)
-  (table-set! key-down-table key))
-(define (key-down-table-actions)
-  (map cdr (table->list key-down-table)))
-(define (key-down-table-keys)
-  (map car (table->list key-down-table)))
-
-(define (event-thread-thunk)
-  (let ((evt-struct (SDL::malloc-event-struct)))
-    (let poll-loop ((event-or-false (SDL::poll-event evt-struct)))
-      (if event-or-false
-          (begin
-            (managage-sdl-event evt-struct)
-            (poll-loop (SDL::poll-event evt-struct)))
-          (begin
-            ;(for-each (lambda (x) (x)) (key-down-table-actions))
-            (thread-sleep! 0.01)
-            (poll-loop (SDL::poll-event evt-struct)))))))
+(define SDL-event-struct (SDL::malloc-event-struct))
+(define (poll-SDL-events)
+  (if (SDL::poll-event SDL-event-struct)
+      (managage-sdl-event SDL-event-struct)))
 
 (define (init-GL w h)
   (glPointSize 1.)
@@ -218,15 +243,11 @@
   )
 
 (define (start-threads!)
-  ;;(set! simulation-thread (make-thread (game-loop (current-thread))))
-  (set! event-thread      (make-thread event-thread-thunk))
-  ;;(thread-start! simulation-thread)
-  (thread-start! event-thread)
   (thread-start! (make-thread (lambda () (##repl)) 'repl))
   )
 
 (define (redraw-loop)
-  (SDL::set-window-caption "Space Invaders" "Space Invaders")
+  (SDL::set-window-caption "Lode Runner" "Lode Runner")
   (SDL::set-window-icon (SDL::load-bmp-file "sprites/lode-runner-icon.bmp") #f)
 
   ;;(SDL::gl-set-attributes SDL::gl-swap-control 0)
@@ -241,7 +262,7 @@
              (set! sdl-screen screen)
              (set! return
                    (lambda (ret-val)
-                     (thread-terminate! event-thread)
+                     ;;(thread-terminate! event-thread)
                      ;;(thread-terminate! simulation-thread)
                      (k ret-val)))
 
@@ -250,18 +271,21 @@
 
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
-             ;; main loop with framerate calculation
+                          (current-level (create-level-choice-menu))
              (let loop ((render-init-time (time->seconds (current-time)))
-                        (level (load-level "data/level1.scm")))
-               (current-level level) ; FIXME!! dont do this every frame...
+                        (level (current-level)))
                (if exit-requested? (quit))
-               (advance-frame! level (key-down-table-keys))
+               (poll-SDL-events)
+               (advance-frame! level (key-down-table-keys) (key-up-table-keys))
                (render-scene screen level)
+               (key-up-table-reset!)
+               
+               ;; main loop with framerate calculation
                (let* ((now (time->seconds (current-time)))
                       (this-fps (floor (/ 1 (- now render-init-time)))))
                  (FPS this-fps))
                (loop (time->seconds (current-time))
-                     level))))
+                     (current-level)))))
           (display "Could not set SDL screen")))
   )
 
