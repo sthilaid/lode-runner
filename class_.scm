@@ -29,7 +29,41 @@
       (define (meth-name sign) (if (not (list? sign))
                                    (error 'bad-signature-syntax)
                                    (car sign)))
+
       (define any-type '*)
+      (define (any-type? ty) (eq? ty any-type))
+      (define (make-external-object val) (cons val any-type))
+      (define (external-object? ty) (and (pair? ty)
+                                         (eq? (cdr ty) any-type)))
+      (define external-object-value car)
+
+      (define match-type match-value:)
+      (define (make-match-type val) (list match-type val))
+      (define (match-type? obj) (and (list? obj) (eq? (car obj) match-type)))
+      (define match-type-value cadr)
+
+      (define match-member match-member:)
+      (define (make-match-mem-type class member value)
+        (list 'list
+              match-member:
+              `(quote ,class)
+              `(lambda (obj)
+                 (equal? (,(gen-accessor-name class member) obj)
+                         ,value))))
+      (define (match-member-type? ty) (and (list? ty)
+                                           (eq? (car ty) match-member)))
+      (define (match-member-class ty) (cadr ty))
+      (define (match-member-predicate ty) (caddr ty))
+
+      (define or-type 'or)
+      (define (make-or-type . types) (cons or-type types))
+      (define (or-type? ty) (and (list? ty) (eq? (car ty) or-type)))
+      (define or-type-types cdr)
+
+      (define and-type 'and)
+      (define (make-and-type . types) (cons and-type types))
+      (define (and-type? ty) (and (list? ty) (eq? (car ty) and-type)))
+      (define and-type-types cdr)
 
       (define (symbol-append s1 . ss)
           (string->symbol (apply string-append
