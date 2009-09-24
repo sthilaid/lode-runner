@@ -8,7 +8,9 @@
                  ((handbar)   '(8 8 loop-x))
                  ((gold)      '(16 16))
                  ((player)    '(16 24))
+                 ((robot)     '(16 24))
                  ((title_bar) '(384 8))
+                 ((logo)      '(234 30))
                  ((bb_fonts)  '(8 8))
                  (else (error "Error: could not find parameters for the font: "
                               font-id)))))

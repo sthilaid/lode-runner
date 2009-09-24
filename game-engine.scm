@@ -209,6 +209,7 @@
                   (init! cast: '(game-object * * * * *) self id x y w h)
                   (stage-neighbours-set! self '()))))
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Leaf Classes (which produce instances)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -286,7 +287,6 @@
                          self x0 y0 initial-velocity (gensym 'robot)))))
 
 (define-class player (human-like)
-  (slot: walk-cycle-state)
   (constructor: (lambda (self x0 y0)
                   (init! cast: '(human-like * * * *)
                          self x0 y0 (new point 0 0) 'player))))
@@ -294,10 +294,10 @@
 (define-class gui (game-object)
   (slot: visible?)
   ;;(slot: zoom-ratio)
-  (constructor: (lambda (self id x y visible?)
+  (constructor: (lambda (self id x y w h visible?)
                   ;; FIXME: usage of zeros can be potentially buggy?
                   (init! cast: '(game-object * * * * *)
-                         self id x y 0 0)
+                         self id x y w h)
                   (set-fields! self gui ((visible? visible?))))))
 
 (define-class label (gui)
@@ -305,12 +305,20 @@
   (slot: color)
   (slot: properties)
   (constructor: (lambda (self text x y color property-list)
-                  (init! cast: '(gui * * * *)
-                         self (gensym 'label) x y #t)
+                  (init! cast: '(gui * * * * * *)
+                         self (gensym 'label) x y 0 0 #t)
                   (set-fields! self label
                     ((text text)
                      (properties property-list)
                      (color color))))))
+
+;; (define-class image (gui)
+;;   (slot: texture)
+;;   (constructor: (lambda (self texture x y w h)
+;;                   (init! cast: '(gui * * * *)
+;;                          self (gensym 'image) x y w h #t)
+;;                   (set-fields! self label
+;;                     ((texture texture))))))
 
 (define-class menu ()
   (slot: name)
@@ -319,6 +327,14 @@
    (lambda (self name objects)
      (set-fields! self menu ((name name)
                              (objects objects))))))
+
+(define-class logo-menu (menu statefull)
+  (slot: last-input-time)
+  (slot: anim-cycle)
+  (constructor: (lambda (self)
+                  (init! cast: '(menu * *) self 'logo-menu '())
+                  (set-fields! self logo-menu ((last-input-time 0)
+                                               (anim-cycle 0))))))
 
 (define-class option-menu (menu)
   (slot: current-choice)
@@ -389,7 +405,6 @@
                     `(define (,(setter-name val) obj)
                        (,(symbol-append class '- member '-set!) obj ',val))))
                  state-values))))
-
 ;;; Option menu interface
 
 (define (get-levels)
@@ -726,6 +741,9 @@
       (human-like-facing-direction-set! p next-state)
       (human-like-state-set! p 'jumping))))
 
+(define (shoot-cycle! p)
+  (human-like-state-set! p 'shoot))
+
 (define (reset-walk-cycle! hum-like)
   ;; leave the direction unchanged...
   (human-like-walk-cycle-state-set! hum-like 0)
@@ -736,7 +754,7 @@
     (cond
      ((eq? (human-like-escaping? p) 'escaping)
       (ascend-cycle! p))
-     ((human-like-shooting? p) 'TODO:use-the-shooting-sprite!)
+     ((human-like-shooting? p) (shoot-cycle! p))
      ((human-like-stuck-in-hole? p) (dying-cycle! p))
      ((and (not (zero? (point-x v)))
            (human-like-can-walk? p))
@@ -1002,9 +1020,40 @@
 (define-method (animate (x game-object) level)
   'do-nothing)
 
-;;; Menu animation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Menu animations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define-generic process-key)
 (define-generic advance-frame!)
+
+;;; Logo Menu animation
+
+(define-method (process-key key-sym (logo logo-menu))
+  (case key-sym
+    [(one) (pp 'toto) (current-level (load-level (car (get-levels))))]
+    [(two) 'start-2-player-game]
+    [(c) 'add-credits]))
+
+(define-method (change-state! (logo logo-menu))
+  (let* ((cycling-delta 20)
+         (cycle-length (* 4 cycling-delta)))
+    (update! logo logo-menu anim-cycle
+             (lambda (s) (modulo (+ s 1) cycle-length)))
+    (let ((next-state
+           (case (quotient (logo-menu-anim-cycle logo) cycling-delta)
+             ((0) 'empty)
+             ((1) 'blue)
+             ((2) 'yellow-green)
+             ((3) 'red-yellow-green)
+             (else (error "Invalid logo-menu cycle state")))))
+      (statefull-state-set! logo next-state))))
+
+(define-method (advance-frame! (logo logo-menu) keys-down keys-up)
+  (change-state! logo)
+  (for-each (flip process-key logo) keys-down))
+
+;;; Option Menu animation
 
 (define-method (process-key key-sym (opt option-menu))
   (let ((now (time->seconds (current-time))))
@@ -1045,8 +1094,12 @@
                (player-droped-rope?-set! player #t))
            (player-velocity-set! player
                                  (new point 0 (- player-movement-speed)))]
-          [(shoot-left)  (generate-hole player 'left  player level)]
-          [(shoot-right) (generate-hole player 'right player level)]))))
+          [(shoot-left)
+           (player-facing-direction-set! player 'left)
+           (generate-hole player 'left  player level)]
+          [(shoot-right)
+           (player-facing-direction-set! player 'right)
+           (generate-hole player 'right player level)]))))
 
 (define-method (advance-frame! (level level) keys-down keys-up)
   ;; not sure what is the good approach at moving objects. The player
@@ -1106,6 +1159,16 @@
                       centered?: #t))
      (option-menu-objects menu))
 ))
+
+;;; Logo menu rendering
+
+(define-method (render (menu logo-menu))
+  (let* ((x (/ screen-max-x 2))
+         (y (* screen-max-y 3/4))
+         (delta-y (##inexact->exact (floor (/ y 20.))))
+         (state (logo-menu-state menu)))
+    (if (not (eq? state 'empty))
+        (render-fontified-sprite logo x y 'logo state centered?: #t))))
 
 ;;; Game level rendering
 
@@ -1198,7 +1261,7 @@
   (render-object p player (player-facing-direction p) (player-state p)))
 
 (define-method (render (r robot))
-  (render-object r player (robot-facing-direction r) (robot-state r)))
+  (render-object r robot (robot-facing-direction r) (robot-state r)))
 
 (define-method (render (l ladder))
   (render-object l ladder 'regular 'ladder))

@@ -27,9 +27,19 @@
                (draw-char bb_fonts color (car chars) centered-x centered-y i)
                (loop (+ i 1) (cdr chars))))))))
 
-(define (render-fontified-sprite sprite-font x y state color)
+(define (render-fontified-sprite sprite-font x y state color  #!key centered?)
   (if (not (eq? color 'black))
-      (draw-char sprite-font color state x y 0)))
+      (let ((centered-x
+             (if centered?
+                 (##flonum->fixnum (exact->inexact
+                                    (- x (* (font-width sprite-font) 1/2))))
+                 x))
+            (centered-y
+             (if centered?
+                 (##flonum->fixnum (exact->inexact
+                                    (- y (* (font-height sprite-font) 1/2))))
+                 y)))
+        (draw-char sprite-font color state centered-x centered-y 0))))
 
 (define (render-hole x y w h)
   ;;(set-bg-color!)
@@ -160,6 +170,7 @@
         (modifiers (SDL::key-modifiers evt-struct))
         (unicode   (SDL::key-unicode   evt-struct)))
     (case key-enum
+      ;; Events handled by the game engine
       [(key-left-arrow)   (key-down-table-add! 'left        #t)]
       [(key-right-arrow)  (key-down-table-add! 'right       #t)]
       [(key-up-arrow)     (key-down-table-add! 'up          #t)]
@@ -167,12 +178,16 @@
       [(key-left-control) (key-down-table-add! 'shoot-left  #t)]
       [(key-left-alt)     (key-down-table-add! 'shoot-right #t)]
       [(key-return)       (key-down-table-add! 'enter #t)]
+      [(key-1)            (key-down-table-add! 'one #t)]
+      [(key-2)            (key-down-table-add! 'two #t)]
+      [(key-c)            (key-down-table-add! 'c #t)]
+
+      ;; Events handled directly in the user-interface
       [(key-p)            (update! (current-level) level paused?
                                    (lambda (p?) (not p?)))]
       [(key-f)            (set! display-fps? (not display-fps?))]
-;;       [(key-l)            (set! fullscreen-mode? (not fullscreen-mode?))
-;;        (pp fullscreen-mode?)]
-      [(key-q)            (request-exit)])
+      [(key-q)            (request-exit)]
+      )
     ))
 
 (define (->key-up   evt-struct)
@@ -186,7 +201,10 @@
       [(key-p)            (key-released 'pause)]
       [(key-left-control) (key-released 'shoot-left)]
       [(key-left-alt)     (key-released 'shoot-right)]
-      [(key-return)       (key-released 'enter)])))
+      [(key-return)       (key-released 'enter)]
+      [(key-1)            (key-released 'one)]
+      [(key-2)            (key-released 'two)]
+      [(key-c)            (key-released 'c)])))
 
 
 ;;; Main related stuff
@@ -271,7 +289,8 @@
 
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
-                          (current-level (create-level-choice-menu))
+             ;;(current-level (create-level-choice-menu))
+             (current-level (new logo-menu))
              (let loop ((render-init-time (time->seconds (current-time)))
                         (level (current-level)))
                (if exit-requested? (quit))

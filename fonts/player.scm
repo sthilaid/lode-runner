@@ -8,4 +8,5 @@
           rope-1-right
           rope-1-left
           rope-2-left
-          rope-2-right)))
+          rope-2-right
+          shoot)))
