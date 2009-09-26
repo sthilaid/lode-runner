@@ -37,9 +37,12 @@ INCLUDE_FILES = declarations.scm \
                 texture_.scm sprite_.scm font_.scm \
                 class_.scm thread-simulation_.scm match.scm
 LIB_FILES = scm-lib.o1 opengl.o1 glu.o1 ppm-reader.o1 texture.o1 sprite.o1 \
-            font.o1 sdl-interface.o1 thread-simulation.o1 rbtree.o1 format.o1 \
+            font.o1 sdl-interface.o1 rbtree.o1 thread-simulation.o1 format.o1 \
             level-loader.o1 game-engine.o1 user-interface.o1 statprof.o1
 GAME_FILES = $(LIB_FILES) $(call add-presufix,font-,.o1,$(FONT_IMAGES))
+COMPILED_FILES = opengl.o1 glu.o1 texture.o1 sprite.o1 sdl-interface.o1 \
+                 font.o1 \
+                 $(call add-presufix,font-,.o1,$(FONT_IMAGES))
 
 
 ## compilers
@@ -118,7 +121,7 @@ $(LIB_PATH)/%.o1: $(SRC_PATH)/%.scm
 
 stringify = $(foreach f,$(1),"$(f)")
 devel: $(SRC_PATH)/game-loader.scm \
-       $(call add-presufix,$(LIB_PATH)/font-,.o1,$(FONT_IMAGES))
+       $(addprefix $(LIB_PATH)/,$(COMPILED_FILES))
 	gsi -:dar $< -e '(load-game $(call stringify,$(SRC_PATH)) $(call stringify,$(LIB_PATH)) (list $(call stringify,$(GAME_FILES))))'
 
 run-game: $(addprefix $(LIB_PATH)/,$(GAME_FILES))
@@ -178,8 +181,9 @@ $(eval $(call generate-dependency,gl-fonts,ppm-reader.scm \
 	                                        sprite.scm sprite_.scm \
 	                                        font.scm font_.scm))
 $(eval $(call generate-dependency,class,class.scm class_.scm))
-$(eval $(call generate-dependency,thread-simulation, thread-simulation.scm \
-                                  thread-simulation_.scm rbtree.scm match.scm))
+$(eval $(call generate-dependency,thread-simulation, rbtree.scm match.scm \
+                                  thread-simulation.scm \
+                                  thread-simulation_.scm ))
 
 
 clean:
