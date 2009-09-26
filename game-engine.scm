@@ -367,6 +367,7 @@
   (slot: state)
   (slot: current-time)
   (slot: clear-ladder)
+  (slot: ai-table)
   (constructor: (lambda (self name grid objects start-pos
                               gold-left clear-ladder)
                   (init! cast: '(menu * *) self name objects)
@@ -381,7 +382,8 @@
                      (paused? #f)
                      (state 'in-game)
                      (current-time 0.)
-                     (clear-ladder clear-ladder))))))
+                     (clear-ladder clear-ladder)
+                     (ai-table (make-table test: eq?)))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -458,11 +460,15 @@
   ;; insert the object within the layer ordered list
   (level-objects-set! lvl (insert-in-ordered-list < obj (level-objects lvl)
                                                   accessor: get-layer))
+  (if (instance-of? obj 'robot)
+      (register-robot-to-ai obj (level-ai-table lvl)))
   (grid-update (level-grid lvl) obj))
 
 (define (level-delete! obj lvl)
   (update! lvl level objects
            (lambda (objs) (list-remove eq? obj objs)))
+  (if (instance-of? obj 'robot)
+      (unregister-robot-to-ai obj (level-ai-table lvl)))
   (level-cache-remove! obj lvl)
   (set-fields! obj game-object ((width 0) (height 0)))
   (grid-update (level-grid lvl) obj))
@@ -967,6 +973,13 @@
 
 ;;; AI
 
+(define (register-robot-to-ai robot ai-table)
+  (table-set! ai-table (robot-id robot) (point-zero)))
+(define (unregister-robot-to-ai robot ai-table)
+  (table-set! ai-table (robot-id robot)))
+
+
+
 (define (fetch-next-ai-move! robot level)
   (define (mask-velo v)
     (define (mask x val) (if (= x val) robot-movement-speed 0))
@@ -982,10 +995,10 @@
                  (else (if (> vy vx) vy vx))))
            (mult (if (>= dir 0) 1 -1)))
       (new point (* mult (mask vx dir)) (* mult (mask vy dir)))))
-  #;(let* ((p (level-get 'player level))
+  (let* ((p (level-get 'player level))
          (velo (point-sub p robot)))
     (robot-velocity-set! robot (mask-velo velo)))
-  (robot-velocity-set! robot point-zero))
+  #;(robot-velocity-set! robot point-zero))
 
 ;;; Animation
 

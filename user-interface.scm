@@ -264,6 +264,22 @@
   (thread-start! (make-thread (lambda () (##repl)) 'repl))
   )
 
+(define (game-loop)
+  (let loop ((render-init-time (time->seconds (current-time)))
+             (level (current-level)))
+    (if exit-requested? (quit))
+    (poll-SDL-events)
+    (advance-frame! level (key-down-table-keys) (key-up-table-keys))
+    (render-scene sdl-screen level)
+    (key-up-table-reset!)
+    
+    ;; main loop with framerate calculation
+    (let* ((now (time->seconds (current-time)))
+           (this-fps (floor (/ 1 (- now render-init-time)))))
+      (FPS this-fps))
+    (loop (time->seconds (current-time))
+          (current-level))))
+
 (define (redraw-loop)
   (SDL::set-window-caption "Lode Runner" "Lode Runner")
   (SDL::set-window-icon (SDL::load-bmp-file "sprites/lode-runner-icon.bmp") #f)
@@ -291,20 +307,7 @@
              (start-threads!)
              ;;(current-level (create-level-choice-menu))
              (current-level (new logo-menu))
-             (let loop ((render-init-time (time->seconds (current-time)))
-                        (level (current-level)))
-               (if exit-requested? (quit))
-               (poll-SDL-events)
-               (advance-frame! level (key-down-table-keys) (key-up-table-keys))
-               (render-scene screen level)
-               (key-up-table-reset!)
-               
-               ;; main loop with framerate calculation
-               (let* ((now (time->seconds (current-time)))
-                      (this-fps (floor (/ 1 (- now render-init-time)))))
-                 (FPS this-fps))
-               (loop (time->seconds (current-time))
-                     (current-level)))))
+             (game-loop)))
           (display "Could not set SDL screen")))
   )
 

@@ -6,7 +6,7 @@ add-presufix = $(foreach f, $(3), $(1)$(f)$(2))
 
 FONT_IMAGES   = wall ladder handbar gold player title_bar robot logo bb_fonts
 
-SCM_LIB_FILES = scm-lib.scm
+SCM_LIB_FILES = scm-lib.scm thread-simulation.scm
 FORMAT_FILES  = format.scm
 FFI_FILES     = opengl.scm glu.scm sdl-interface.scm
 FONT_FILES    = ppm-reader.scm texture.scm sprite.scm font.scm
@@ -31,6 +31,7 @@ GAMBIT_INCLUDE=$(PATH_TO_GAMBIT)/include
 
 ## Some scheme libraries paths
 OOSYSYEM_PATH=$(HOME)/projet/maitrise/class
+THREADSIM_PATH=$(HOME)/projet/maitrise/thread-simulation
 SCMLIB_PATH=$(HOME)/projet/maitrise/scm-lib
 SDLINTERFACE_PATH=$(HOME)/projet/maitrise/sdl-interface
 OPENGL-FFI_PATH=$(HOME)/projet/scheme/opengl-ffi
@@ -104,6 +105,13 @@ class.scm: $(OOSYSYEM_PATH)/class.scm
 	cp $(OOSYSYEM_PATH)/class.scm .
 class_.scm: $(OOSYSYEM_PATH)/class_.scm
 	cp $(OOSYSYEM_PATH)/class_.scm .
+
+IMPORTED-FILES = thread-simulation.scm thread-simulation_.scm
+thread-simulation.scm: $(THREADSIM_PATH)/thread-simulation.scm
+	cp $(THREADSIM_PATH)/thread-simulation.scm .
+thread-simulation_.scm: $(THREADSIM_PATH)/thread-simulation_.scm
+	cp $(THREADSIM_PATH)/thread-simulation_.scm .
+
 
 ## Scheme basic block library
 IMPORTED-FILES += scm-lib.scm scm-lib-macro.scm
