@@ -7,7 +7,7 @@
 (define fullscreen-mode? #f)
 (define event-thread #f)
 (define display-fps? #f)
-(define current-level (make-parameter #f))
+;;(define current-level (make-parameter #f))
 
 (define (set-bg-color!)
   (glColor3f .3 .3 .3))
@@ -141,10 +141,11 @@
 (define (key-down-table-reset-key key)
   (table-set! key-down-table key))
 
+;; only consider the key downs that are not false...
 (define (key-down-table-actions)
-  (map cdr (table->list key-down-table)))
+  (map cdr (filter car (table->list key-down-table))))
 (define (key-down-table-keys)
-  (map car (table->list key-down-table)))
+  (filter identity (map car (table->list key-down-table))))
 
 (define key-up-table (make-table test: eq?))
 (define (key-up-table-add! key action)
@@ -181,10 +182,8 @@
       [(key-1)            (key-down-table-add! 'one #t)]
       [(key-2)            (key-down-table-add! 'two #t)]
       [(key-c)            (key-down-table-add! 'c #t)]
-
-      ;; Events handled directly in the user-interface
-      [(key-p)            (update! (current-level) level paused?
-                                   (lambda (p?) (not p?)))]
+      [(key-p)            (key-down-table-add! 'pause #t)]
+      ;; Handled directly here...
       [(key-f)            (set! display-fps? (not display-fps?))]
       [(key-q)            (request-exit)]
       )
@@ -204,7 +203,8 @@
       [(key-return)       (key-released 'enter)]
       [(key-1)            (key-released 'one)]
       [(key-2)            (key-released 'two)]
-      [(key-c)            (key-released 'c)])))
+      [(key-c)            (key-released 'c)]
+      [(key-p)            (key-released 'pause)])))
 
 
 ;;; Main related stuff
@@ -264,21 +264,21 @@
   (thread-start! (make-thread (lambda () (##repl)) 'repl))
   )
 
-(define (game-loop)
+(define (game-loop start-level)
   (let loop ((render-init-time (time->seconds (current-time)))
-             (level (current-level)))
+             (level start-level))
     (if exit-requested? (quit))
     (poll-SDL-events)
-    (advance-frame! level (key-down-table-keys) (key-up-table-keys))
-    (render-scene sdl-screen level)
-    (key-up-table-reset!)
-    
-    ;; main loop with framerate calculation
-    (let* ((now (time->seconds (current-time)))
+    (let ((current-level (advance-frame! level
+                                         (key-down-table-keys)
+                                         (key-up-table-keys))))
+      (render-scene sdl-screen level)
+      (key-up-table-reset!)
+      ;; main loop with framerate calculation
+      (let* ((now (time->seconds (current-time)))
            (this-fps (floor (/ 1 (- now render-init-time)))))
       (FPS this-fps))
-    (loop (time->seconds (current-time))
-          (current-level))))
+      (loop (time->seconds (current-time)) current-level))))
 
 (define (redraw-loop)
   (SDL::set-window-caption "Lode Runner" "Lode Runner")
@@ -305,9 +305,7 @@
 
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
-             ;;(current-level (create-level-choice-menu))
-             (current-level (new logo-menu))
-             (game-loop)))
+             (game-loop (new logo-menu))))
           (display "Could not set SDL screen")))
   )
 

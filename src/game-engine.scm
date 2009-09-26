@@ -226,12 +226,12 @@
   (slot: can-pass-through?) ; contains the object creation time or #f
   (slot: creator) ; object that created the hole (or #f)
   (constructor:
-   (lambda (self x y w h creator) (init! cast: '(stage * * * * *)
-                                         self (gensym 'hole) x y w h)
+   (lambda (self x y w h creator lvl) (init! cast: '(stage * * * * *)
+                                             self (gensym 'hole) x y w h)
            (set-fields! self hole
              ((state 0)
               (appear-cycle-state 0)
-              (can-pass-through? (level-current-time (current-level)))
+              (can-pass-through? (level-current-time lvl))
               (creator creator)))
            (hole-disappearing! self))))
 
@@ -320,13 +320,18 @@
 ;;                   (set-fields! self label
 ;;                     ((texture texture))))))
 
+;; since the control flow is described by the dispatch made on the
+;; menu instance, the continuation can be manipulated by changing this
+;; instance...
 (define-class menu ()
   (slot: name)
   (slot: objects)
+  (slot: continuation-menu)
   (constructor:
    (lambda (self name objects)
      (set-fields! self menu ((name name)
-                             (objects objects))))))
+                             (objects objects)
+                             (continuation-menu self))))))
 
 (define-class logo-menu (menu statefull)
   (slot: last-input-time)
@@ -407,6 +412,11 @@
                     `(define (,(setter-name val) obj)
                        (,(symbol-append class '- member '-set!) obj ',val))))
                  state-values))))
+
+;;; General menu inteface
+(define (change-current-level menu next-menu)
+  (menu-continuation-menu-set! menu next-menu))
+
 ;;; Option menu interface
 
 (define (get-levels)
@@ -414,23 +424,26 @@
        (filter (compose (flip string=? ".scm") path-extension)
                (quick-sort string-ci<? string-ci=? string-ci>?
                            (directory-files "data")))))
-(define (create-level-option level)
+(define (create-level-option menu level-to-load)
   (new option-item
-       (path-strip-directory (path-strip-extension level))
+       (path-strip-directory (path-strip-extension level-to-load))
        (lambda ()
          (with-exception-catcher
           (lambda (e) (println "Could not load level "
                                (path-strip-directory
-                                (path-strip-extension level))))
+                                (path-strip-extension level-to-load))))
           (lambda ()
-           (current-level (load-level level)))))))
+           (change-current-level menu (load-level level-to-load)))))))
 
 (define (create-level-choice-menu)
-  (let ((levels (map create-level-option (get-levels))))
-    (if (not (pair? levels)) (error "No level found in the data directory..."))
-    (let ((menu (new option-menu 'level-choice-menu levels)))
-      (option-menu-choose! menu 0)
-      menu)))
+  (let* ((menu (new option-menu 'level-choice-menu '()))
+         (levels (map (curry2 create-level-option menu) (get-levels))))
+    (if (not (pair? levels))
+        (error "No level found in the data directory...")
+        (begin
+          (option-menu-objects-set! menu levels)
+          (option-menu-choose! menu 0)
+          menu))))
 
 (define (option-menu-choose! menu item-index)
   (let* ((objs (option-menu-objects menu))
@@ -530,7 +543,7 @@
               (if can-create-hole?
                   (let* ((x (+ (player-x p) hole-x-offset))
                          (y (floor (- (player-y p) 2)))
-                         (h (new hole x y 2 2 creator)))
+                         (h (new hole x y 2 2 creator lvl)))
                     (set! last-hole-creation-time now)
                     (human-like-shooting?-set! creator #t)
                     (and (within-grid-bounds? h)
@@ -1044,7 +1057,7 @@
 
 (define-method (process-key key-sym (logo logo-menu))
   (case key-sym
-    [(one) (pp 'toto) (current-level (load-level (car (get-levels))))]
+    [(one) (change-current-level logo (load-level (car (get-levels))))]
     [(two) 'start-2-player-game]
     [(c) 'add-credits]))
 
@@ -1064,7 +1077,8 @@
 
 (define-method (advance-frame! (logo logo-menu) keys-down keys-up)
   (change-state! logo)
-  (for-each (flip process-key logo) keys-down))
+  (for-each (flip process-key logo) keys-down)
+  (menu-continuation-menu logo))
 
 ;;; Option Menu animation
 
@@ -1083,36 +1097,46 @@
           (option-menu-last-input-time-set! opt now)))))
 
 (define-method (advance-frame! (opt option-menu) keys-down keys-up)
-  (for-each (flip process-key opt) keys-up))
+  (for-each (flip process-key opt) keys-up)
+  (menu-continuation-menu opt))
 
 ;;; Level animation
 (define-method (process-key key-sym (level level))
   ;; the keysym are defined in the user-interface module
   (let ((player (level-get 'player level)))
     (if (and player (not (player-shooting? player)))
-        (case key-sym
-          [(left)
-           (player-velocity-set! player
-                                 (new point (- player-movement-speed) 0))]
-          [(right)
-           (player-velocity-set! player
-                                 (new point player-movement-speed 0))]
-          [(up)
-           (if (player-escaping? player)
-               (player-escaping?-set! player 'escaping))
-           (player-velocity-set! player
-                                 (new point 0 player-movement-speed))]
-          [(down)
-           (if (human-like-can-use-rope? player)
-               (player-droped-rope?-set! player #t))
-           (player-velocity-set! player
-                                 (new point 0 (- player-movement-speed)))]
-          [(shoot-left)
-           (player-facing-direction-set! player 'left)
-           (generate-hole player 'left  player level)]
-          [(shoot-right)
-           (player-facing-direction-set! player 'right)
-           (generate-hole player 'right player level)]))))
+        (begin
+         (case key-sym
+           [(left)
+            (player-velocity-set! player
+                                  (new point (- player-movement-speed) 0))]
+           [(right)
+            (player-velocity-set! player
+                                  (new point player-movement-speed 0))]
+           [(up)
+            (if (player-escaping? player)
+                (player-escaping?-set! player 'escaping))
+            (player-velocity-set! player
+                                  (new point 0 player-movement-speed))]
+           [(down)
+            (if (human-like-can-use-rope? player)
+                (player-droped-rope?-set! player #t))
+            (player-velocity-set! player
+                                  (new point 0 (- player-movement-speed)))]
+           [(shoot-left)
+            (player-facing-direction-set! player 'left)
+            (generate-hole player 'left  player level)]
+           [(shoot-right)
+            (player-facing-direction-set! player 'right)
+            (generate-hole player 'right player level)])))))
+
+(define (manage-pause keys-down level)
+  (if (memq 'pause keys-down)
+      (begin
+        ;; Unclean... causes unwanted circular coupling with the
+        ;; user-interface... :(
+        (key-down-table-reset-key 'pause)
+        (update! level level paused? (lambda (x) (not x))))))
 
 (define-method (advance-frame! (level level) keys-down keys-up)
   ;; not sure what is the good approach at moving objects. The player
@@ -1120,19 +1144,21 @@
   (cond ((level-get 'player level) =>
          (lambda (player)
            (player-velocity-set! player point-zero))))
+  (manage-pause keys-down level)
   (cond
    ((level-paused? level) 'do-nothing)
    ((level-game-over? level) 'restart-level) ;; TODO
    ((level-level-cleared? level)
     ;; TODO: score-calculation
-    (current-level (create-level-choice-menu)))
+    (change-current-level level (create-level-choice-menu)))
    (else
     (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
     (if (> (level-current-time level) (level-time-limit level))
         (level-game-over! level)
         (begin
           (for-each (flip process-key level) keys-down)
-          (for-each (flip animate level) (level-objects level)))))))
+          (for-each (flip animate level) (level-objects level))))))
+  (menu-continuation-menu level))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

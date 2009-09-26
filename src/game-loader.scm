@@ -9,15 +9,17 @@
                       (reverse (cons f gs)))))
 
 (define (dyn-load file1 file2)
-  (let ((ts1 (if (file-exists? file1)
-                 (time->seconds(file-info-last-modification-time
-                                (file-info file1)))
-                 0))
-        (ts2 (if (file-exists? file2)
-                 (time->seconds (file-info-last-modification-time
-                                 (file-info file2)))
-                 0)))
-    (load (if (> ts1 ts2) file1 file2))))
+  (let* ((ts1 (if (file-exists? file1)
+                  (time->seconds(file-info-last-modification-time
+                                 (file-info file1)))
+                  0))
+         (ts2 (if (file-exists? file2)
+                  (time->seconds (file-info-last-modification-time
+                                  (file-info file2)))
+                  0))
+         (loaded-file (if (> ts1 ts2) file1 file2)))
+    (println "loading: " loaded-file)
+    (load loaded-file)))
 
 (define (load-game src-dir lib-dir lib-files)
   (define strip (compose path-strip-extension path-strip-directory))

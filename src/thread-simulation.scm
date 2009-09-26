@@ -1,8 +1,8 @@
 
 ;; FIXME: Load calls should be removed in the final compiled version
 
-(include "class.scm")
 (include "scm-lib_.scm")
+(include "thread-simulation_.scm")
 ;; (load "rbtree.scm")
 ;; (load "scm-lib")
 
@@ -11,12 +11,13 @@
 ;;; Timer
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-class timer ()
-  (slot: time)
-  (slot: freq)
-  (slot: paused?)
-  (slot: thread)
-  (slot: time-multiplier))
+(define-type timer time freq paused? thread time-multiplier)
+;; (define-class timer ()
+;;   (slot: time)
+;;   (slot: freq)
+;;   (slot: paused?)
+;;   (slot: thread)
+;;   (slot: time-multiplier))
 
 ;; the timer uses an integer time value so that it will enable the use
 ;; of bignums for precise long simulations. That's why the freq
@@ -54,26 +55,38 @@
 ;;; Data type definitions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-class corout ()
-  (slot: id)
-  (slot: kont)
-  (slot: mailbox)
-  (slot: state-env) ;; should be unprintable
-  (slot: prioritize?)
-  (slot: sleeping?)
-  (slot: delta-t)
-  (slot: msg-lists)
-  (constructor:
-   (lambda (obj id thunk)
-     (set-fields! obj corout
-       ((id          id)
-        (kont        (lambda (dummy) (terminate-corout (thunk))))
-        (mailbox     (new-queue))
-        (state-env   #f)
+(define-type corout id kont mailbox state-env
+                    prioritize? sleeping? delta-t msg-lists)
+(define (new-corout id thunk)
+  (let ((kont (lambda (dummy) (terminate-corout (thunk))))
+        (mailbox (new-queue))
+        (state-env #f)
         (prioritize? #f)
-        (sleeping?   #f)
-        (delta-t     #f)
-        (msg-lists   (empty-set)))))))
+        (sleeping? #f)
+        (delta-t #f)
+        (msg-lists (empty-set)))
+   (make-corout id kont mailbox state-env 
+                prioritize? sleeping? delta-t msg-lists)))
+;; (define-class corout ()
+;;   (slot: id)
+;;   (slot: kont)
+;;   (slot: mailbox)
+;;   (slot: state-env) ;; should be unprintable
+;;   (slot: prioritize?)
+;;   (slot: sleeping?)
+;;   (slot: delta-t)
+;;   (slot: msg-lists)
+;;   (constructor:
+;;    (lambda (obj id thunk)
+;;      (set-fields! obj corout
+;;        ((id          id)
+;;         (kont        (lambda (dummy) (terminate-corout (thunk))))
+;;         (mailbox     (new-queue))
+;;         (state-env   #f)
+;;         (prioritize? #f)
+;;         (sleeping?   #f)
+;;         (delta-t     #f)
+;;         (msg-lists   (empty-set)))))))
 
 (define (sleeping-on-mutex)    
   'sleeping-on-mutex)
@@ -108,21 +121,24 @@
 (define (mailbox-dequeue thrd)
   (dequeue! (corout-mailbox thrd)))
 
-(define-class state ()
-  (slot: current-corout)
-  (slot: q)
-  (slot: timer)
-  (slot: time-sleep-q)
-  (slot: root-k)
-  (slot: return-value-handler)
-  (slot: return-value)
-  (slot: return-to-sched)
-  (slot: parent-state) ;unprintable:
-  (slot: dynamic-handlers)
-  (slot: sleeping-coroutines))
+(define-type state current-corout q timer time-sleep-q root-k
+                   return-value-handler return-value return-to-sched
+                   parent-state dynamic-handlers sleeping-coroutines)
+;; (define-class state ()
+;;   (slot: current-corout)
+;;   (slot: q)
+;;   (slot: timer)
+;;   (slot: time-sleep-q)
+;;   (slot: root-k)
+;;   (slot: return-value-handler)
+;;   (slot: return-value)
+;;   (slot: return-to-sched)
+;;   (slot: parent-state) ;unprintable:
+;;   (slot: dynamic-handlers)
+;;   (slot: sleeping-coroutines))
 
-
-(define-class sem () (slot: value) (slot: wait-queue))
+(define-type sem value wait-queue)
+;; (define-class sem () (slot: value) (slot: wait-queue))
 
 ;; Must be used to enqueue a coroutine in the coroutine active
 ;; queue. The sleep queue *must not* use otherwise, it will result in
@@ -547,10 +563,9 @@
 
 ;; Spawns an anonymous brother coroutine.
 (define (spawn-brother-thunk id thunk)
-  (let ((c (new corout id thunk)))
-    (enqueue! (q) (new corout id thunk))
+  (let ((c (new-corout id thunk)))
+    (enqueue! (q) (new-corout id thunk))
     c))
-
 
 ;; Will put the current-corout to sleep for about "secs" seconds
 (define (sleep-for secs #!key (interruptible? #f))

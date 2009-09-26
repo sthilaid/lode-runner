@@ -1,5 +1,20 @@
 ;; (requires match.scm)
 
+;; taken from the object system since its compatible and usefull :)
+(define-macro (update! obj class field f)
+  (define (symbol-append s1 . ss)
+    (string->symbol (apply string-append
+                           (symbol->string s1)
+                           (map symbol->string ss))))
+  (define (gen-accessor-name class-name var)
+    (symbol-append class-name '- var))
+  (define (gen-setter-name class-name var)
+    (symbol-append class-name '- var '-set!))
+  (let ((objval (gensym 'objval)))
+   `(let ((,objval ,obj))
+      (,(gen-setter-name class field) ,objval
+       (,f (,(gen-accessor-name class field) ,objval))))))
+
 ;; Critical section used with the semaphores. action and actions will
 ;; be executed inside the given semaphore (that should be a mutex for
 ;; a critical-section) and the semaphore will be released after the
@@ -43,7 +58,7 @@
   `(terminate-corout ,continuation-corout))
 
 (define-macro (continue-with-thunk! continuation-thunk)
-  `(continue-with (new corout (gensym 'corout) ,continuation-thunk)))
+  `(continue-with (new-corout (gensym 'corout) ,continuation-thunk)))
 
 
 
@@ -64,7 +79,7 @@
 
 (define-macro (spawn . body)
   (let ((brother (gensym 'brother)))
-    `(let ((,brother (new corout (gensym (symbol-append
+    `(let ((,brother (new-corout (gensym (symbol-append
                                           (corout-id (current-corout))
                                           '-child))
                           (lambda () ,@body))))
