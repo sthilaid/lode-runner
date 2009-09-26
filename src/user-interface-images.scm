@@ -17,8 +17,7 @@
    (with-output-to-file (list path: (string-append "generated/font-"
                                                    font-id ".scm"))
      (lambda ()
-       (pretty-print `(begin (include "../declarations.scm")
-                             ;;(include "../opengl-header.scm")
-                             (include "../texture-macro.scm")
-                             (include "../font-macro.scm")
+       (pretty-print `(begin (include "../include/declarations.scm")
+                             (include "../include/texture_.scm")
+                             (include "../include/font_.scm")
                              (define-symmetric-font ,font-id ,@args)))))))

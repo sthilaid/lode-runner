@@ -1,4 +1,4 @@
-(include "scm-lib-macro.scm")
+(include "scm-lib_.scm")
 (include "class_.scm")
 
 (define screen-max-x 388)

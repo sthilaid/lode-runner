@@ -1,5 +1,5 @@
 (include "declarations.scm")
-(include "scm-lib-macro.scm")
+(include "scm-lib_.scm")
 (include "class.scm")
 
 ;; FPS is calculated in the user interface
