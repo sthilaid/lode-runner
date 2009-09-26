@@ -38,7 +38,7 @@ INCLUDE_FILES = declarations.scm \
                 class_.scm thread-simulation_.scm match.scm
 LIB_FILES = scm-lib.o1 opengl.o1 glu.o1 ppm-reader.o1 texture.o1 sprite.o1 \
             font.o1 sdl-interface.o1 rbtree.o1 thread-simulation.o1 format.o1 \
-            level-loader.o1 game-engine.o1 user-interface.o1 statprof.o1
+            game-engine.o1 level-loader.o1 user-interface.o1 statprof.o1
 GAME_FILES = $(LIB_FILES) $(call add-presufix,font-,.o1,$(FONT_IMAGES))
 COMPILED_FILES = opengl.o1 glu.o1 texture.o1 sprite.o1 sdl-interface.o1 \
                  font.o1 \
