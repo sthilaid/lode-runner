@@ -48,7 +48,7 @@
 
 (define (load-robot mat i j)
   (let* ((x j) (y i)
-         (robot (new robot x y 0)))
+         (robot (new robot x y point-zero)))
     (for-each (lambda (cell)
                 (let ((x (grid-cell-i cell))
                       (y (grid-cell-j cell)))
@@ -196,20 +196,20 @@
             (for-each (lambda (obj)
                         (update! obj game-object y (lambda (y) (+ y 1))))
                       acc)
-            (for-each (lambda (obj) (grid-update grid obj))
-                      all-objects)
             ;; the player start pos must be retrieved *after* the
             ;; objects were lifted up of 1 grid cell...
-            (let ((player-start
-                  (cond ((exists player? all-objects)
-                         => (lambda (p) (new point (player-x p) (player-y p))))
-                        (else (error "No player found in the level "
-                                     level-name)))))
-              (new level 
-                   level-name
-                   grid                  ; grid
-                   (quick-sort < = > game-start-objects accessor: get-layer)
-                   player-start          ; start pos
-                   number-of-gold        ; gold-left
-                   clear-ladder
-                   )))))))
+            (let* ((player-start
+                    (cond ((exists player? all-objects)
+                           => (lambda (p)
+                                (new point (player-x p) (player-y p))))
+                          (else (error "No player found in the level "
+                                       level-name))))
+                   (level (new level 
+                               level-name
+                               grid           ; grid
+                               '()            ; objects
+                               player-start   ; start pos
+                               number-of-gold ; gold-left
+                               clear-ladder)))
+              (for-each (flip level-add! level) game-start-objects)
+              level))))))

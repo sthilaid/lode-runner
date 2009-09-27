@@ -54,6 +54,9 @@
   (sqrt (+ (expt (- (point-x p1) (point-x p2)) 2)
            (expt (- (point-y p1) (point-y p2)) 2))))
 
+(define (point-norm p)
+  (sqrt (+ (expt (point-x p) 2) (expt (point-y p) 2))))
+
 (define (point-complexify p) (make-rectangular (point-x p) (point-y p)))
 
 (define (point= p1 p2)
@@ -372,7 +375,9 @@
   (slot: state)
   (slot: current-time)
   (slot: clear-ladder)
-  (slot: ai-table)
+  (slot: ai-set)
+  (slot: ai-corout)
+  (slot: difficulty)
   (constructor: (lambda (self name grid objects start-pos
                               gold-left clear-ladder)
                   (init! cast: '(menu * *) self name objects)
@@ -388,7 +393,9 @@
                      (state 'in-game)
                      (current-time 0.)
                      (clear-ladder clear-ladder)
-                     (ai-table (make-table test: eq?)))))))
+                     (ai-set (empty-set))
+                     (ai-corout (new-corout (gensym 'ai) (ai-corout-body self)))
+                     (difficulty 'stupid))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -474,14 +481,14 @@
   (level-objects-set! lvl (insert-in-ordered-list < obj (level-objects lvl)
                                                   accessor: get-layer))
   (if (instance-of? obj 'robot)
-      (register-robot-to-ai obj (level-ai-table lvl)))
+      (begin (pp 'added!) (register-robot-to-ai obj lvl)))
   (grid-update (level-grid lvl) obj))
 
 (define (level-delete! obj lvl)
   (update! lvl level objects
            (lambda (objs) (list-remove eq? obj objs)))
   (if (instance-of? obj 'robot)
-      (unregister-robot-to-ai obj (level-ai-table lvl)))
+      (unregister-robot-to-ai obj lvl))
   (level-cache-remove! obj lvl)
   (set-fields! obj game-object ((width 0) (height 0)))
   (grid-update (level-grid lvl) obj))
@@ -986,32 +993,61 @@
 
 ;;; AI
 
-(define (register-robot-to-ai robot ai-table)
-  (table-set! ai-table (robot-id robot) (point-zero)))
-(define (unregister-robot-to-ai robot ai-table)
-  (table-set! ai-table (robot-id robot)))
+(define (register-robot-to-ai robot level)
+  (update! level level ai-set (lambda (set) (set-add eq? robot set))))
+(define (unregister-robot-to-ai robot level)
+  (update! level level ai-set (lambda (set) (set-remove eq? robot set))))
 
+(define (immobile-ai robot level)
+  (pp `(robot ,(robot-id robot) is immobile))
+  (robot-velocity-set! robot point-zero))
 
+(define (seeker-ai robot level)
+  (let* ((player (level-get 'player level))
+         (dir (point-sub player robot))
+         (scaled-dir
+          (point-scalar-mult dir (* robot-movement-speed (point-norm dir)))))
+    (pp `(velocity of robot ,(robot-id robot) is now (,(point-x scaled-dir)
+                                                      ,(point-y scaled-dir))))
+    (robot-velocity-set! robot scaled-dir)))
 
-(define (fetch-next-ai-move! robot level)
-  (define (mask-velo v)
-    (define (mask x val) (if (= x val) robot-movement-speed 0))
-    (let* ((vx (point-x v))
-           (vy (point-y v))
-           (dir (cond
-                 ((and (robot-can-go-down? robot)
-                       (< vy 0))
-                  vy)
-                 ((and (robot-can-climb-up? robot)
-                       (> vy 0))
-                  vy)
-                 (else (if (> vy vx) vy vx))))
-           (mult (if (>= dir 0) 1 -1)))
-      (new point (* mult (mask vx dir)) (* mult (mask vy dir)))))
-  (let* ((p (level-get 'player level))
-         (velo (point-sub p robot)))
-    (robot-velocity-set! robot (mask-velo velo)))
-  #;(robot-velocity-set! robot point-zero))
+(define (ai-corout-body level)
+  (define (get-ai-fun difficulty)
+    (case difficulty
+      ((stupid) immobile-ai)
+      ((easy) seeker-ai)
+      (else immobile-ai)))
+  (lambda ()
+    (let ((ai-fun (get-ai-fun (level-difficulty level))))
+     (let loop ()
+       (for-each (flip ai-fun level) (level-ai-set level))
+       (corout-pause)
+       (loop)))))
+
+(define (advance-ai! level)
+  (yield-to (level-ai-corout level) 
+            for: 0.01 
+            forced-yield: corout-pause))
+
+;; (define (mask-velo v)
+;;     (define (mask x val) (if (= x val) robot-movement-speed 0))
+;;     (let* ((vx (point-x v))
+;;            (vy (point-y v))
+;;            (dir (cond
+;;                  ((and (robot-can-go-down? robot)
+;;                        (< vy 0))
+;;                   vy)
+;;                  ((and (robot-can-climb-up? robot)
+;;                        (> vy 0))
+;;                   vy)
+;;                  (else (if (> vy vx) vy vx))))
+;;            (mult (if (>= dir 0) 1 -1)))
+;;       (new point (* mult (mask vx dir)) (* mult (mask vy dir)))))
+
+;; (define (fetch-next-ai-move! robot level)
+;;   (let ((next-velocity
+;;          (table-ref (robot-id robot) (level-ai-table level) (point-zero))))
+;;    (robot-velocity-set! robot next-velocity)))
 
 ;;; Animation
 
@@ -1029,7 +1065,7 @@
              (move! p level k))))
 
 (define-method (animate (r robot) level)
-  (fetch-next-ai-move! r level)
+  ;;(fetch-next-ai-move! r level)
   (call/cc (lambda (k)
              (if (not (human-like-can-go-forward? r))
                  (robot-velocity-set!
@@ -1058,7 +1094,14 @@
 (define-method (process-key key-sym (logo logo-menu))
   (case key-sym
     [(one) (change-current-level logo (load-level (car (get-levels))))]
-    [(two) 'start-2-player-game]
+    [(two)
+     ;; TODO: this must be arranged later to have comm with these 2
+     ;; corouts. Also this new corout should terminate when the game
+     ;; is finished.
+     (spawn-brother-thunk 'player-2
+                          (lambda ()
+                            (game-loop (load-level (car (get-levels))))))
+     (change-current-level logo (load-level (car (get-levels))))]
     [(c) 'add-credits]))
 
 (define-method (change-state! (logo logo-menu))
@@ -1153,6 +1196,7 @@
     (change-current-level level (create-level-choice-menu)))
    (else
     (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
+    ;;(advance-ai! level)
     (if (> (level-current-time level) (level-time-limit level))
         (level-game-over! level)
         (begin

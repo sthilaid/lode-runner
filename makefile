@@ -32,13 +32,13 @@ FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
 FONT_IMAGES   = wall ladder handbar gold player title_bar robot logo bb_fonts
 
-INCLUDE_FILES = declarations.scm \
+INCLUDE_FILES = declarations.scm statprof.o1\
                 scm-lib_.scm class.scm class_.scm opengl_.scm glu_.scm \
                 texture_.scm sprite_.scm font_.scm \
                 class_.scm thread-simulation_.scm match.scm
 LIB_FILES = scm-lib.o1 opengl.o1 glu.o1 ppm-reader.o1 texture.o1 sprite.o1 \
             font.o1 sdl-interface.o1 rbtree.o1 thread-simulation.o1 format.o1 \
-            game-engine.o1 level-loader.o1 user-interface.o1 statprof.o1
+            game-engine.o1 level-loader.o1 user-interface.o1 
 GAME_FILES = $(LIB_FILES) $(call add-presufix,font-,.o1,$(FONT_IMAGES))
 COMPILED_FILES = opengl.o1 glu.o1 texture.o1 sprite.o1 sdl-interface.o1 \
                  font.o1 \
@@ -121,6 +121,7 @@ $(LIB_PATH)/%.o1: $(SRC_PATH)/%.scm
 
 stringify = $(foreach f,$(1),"$(f)")
 devel: $(SRC_PATH)/game-loader.scm \
+	     $(addprefix $(SRC_PATH)/,$(LIB_FILES:.o1=.scm)) \
        $(addprefix $(LIB_PATH)/,$(COMPILED_FILES))
 	gsi -:dar $< -e '(load-game $(call stringify,$(SRC_PATH)) $(call stringify,$(LIB_PATH)) (list $(call stringify,$(GAME_FILES))))'
 
@@ -142,7 +143,7 @@ generated/font-%.scm: fonts/%.ppm $(SRC_PATH)/user-interface-images.scm
 
 static: $(addprefix $(SRC_PATH)/,$(LIB_FILES:.o1=.scm)) \
         $(call add-presufix,generated/font-,.scm,$(FONT_IMAGES))
-	$(GSC) -exe -o $(PREFIX)/lode-runner -cc-options "$(INCLUDE_OPTIONS)" -ld-options "$(LD_OPTIONS)" $^
+	$(GSC) -exe -o $(PREFIX)/lode-runner -cc-options "$(INCLUDE_OPTIONS)" -ld-options "$(LD_OPTIONS)" -prelude '(define-cond-expand-feature compiled-version)' $^
 
 ### "included" macro dependant scheme source files
 

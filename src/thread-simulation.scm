@@ -274,17 +274,21 @@
 ;; unbound, this happens when the q is empty and no coroutine in the
 ;; sleep-q can be awaken yet.
 (define ___scheduler-is-speeping___ (gensym))
+(define ___coroutine-was-paused___ (gensym))
 (define (manage-return-value)
-  (cond
-   ((and (corout? (current-corout))
-         (not (corout-sleeping? (current-corout))))
-    (corout-enqueue! (q) (current-corout)))
-   ((and (not (corout? (current-corout)))
-         (not (eq? (current-corout) ___scheduler-is-speeping___)))
-    (return-value
-     (if (not (return-value))
-         (current-corout)
-         ((return-value-handler) (return-value) (current-corout)))))))
+  (let ((current-corout-val (current-corout)))
+    (cond
+     ((and (corout? current-corout-val)
+           (not (corout-sleeping? current-corout-val)))
+      (corout-enqueue! (q) current-corout-val))
+     ((and (not (corout? current-corout-val))
+           (case current-corout-val
+             ((___scheduler-is-speeping___ ___coroutine-was-paused___) #f)
+             (else #t)))
+      (return-value
+       (if (not (return-value))
+           current-corout-val
+           ((return-value-handler) (return-value) current-corout-val)))))))
 
 (define (wake-up-sleepers)
   (let ((now (current-sim-time)))
@@ -383,6 +387,16 @@
      (corout-kont-set! (current-corout) k)
      (resume-scheduling))))
 
+;; Pause takes the current coroutine out of the running queue. Thus
+;; the coroutine will have to be re-inserted back with, for example,
+;; spawn-brother.
+(define (corout-pause)
+  (continuation-capture
+   (lambda (k)
+     (corout-kont-set! (current-corout) k)
+     (current-corout ___coroutine-was-paused___)
+     (resume-scheduling))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; External definitions
@@ -395,6 +409,9 @@
 ;; Querry the current-coroutine's mailbox to see if its empty
 (define (empty-mailbox?)
   (empty-queue? (corout-mailbox (current-corout))))
+
+(define (trash-mailbox!)
+  (corout-mailbox-set! (current-corout) (new-queue)))
 
 ;; Send a message to the givent destination coroutine object.
 (define (! dest-corout msg)

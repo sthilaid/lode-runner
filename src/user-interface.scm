@@ -43,7 +43,7 @@
 
 (define (render-hole x y w h)
   ;;(set-bg-color!)
-  (glColor3f 0. 1. 0.)
+  (glColor3f 0. 0. 0.)
   (glBegin GL_TRIANGLE_STRIP)
   (glVertex2i x y)
   (glVertex2i (+ x w) y)
@@ -305,7 +305,9 @@
 
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
-             (game-loop (new logo-menu))))
+             (simple-boot
+              (new-corout 'main-menu
+                          (lambda () (game-loop (new logo-menu)))))))
           (display "Could not set SDL screen")))
   )
 
@@ -314,13 +316,17 @@
 (define exit-requested? #f)
 (define return #f)
 (define (quit)
-  (profile-stop!)
-  (write-profile-report "profiling-report")
+  ;;(profile-stop!)
+  ;;(write-profile-report "profiling-report")
   (pp `(average frame-rate: ,(FPS)))
   (return 0))
 
 ;; Main function which only sets up and starts the game threads
 (define (main)
-  (profile-start!)
+  ;;(profile-start!)
   (SDL::within-sdl-lifetime SDL::init-everything
                             redraw-loop))
+
+(cond-expand
+ (compiled-version (main))
+ (else))
