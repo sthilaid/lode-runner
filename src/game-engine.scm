@@ -375,8 +375,6 @@
   (slot: state)
   (slot: current-time)
   (slot: clear-ladder)
-  (slot: ai-set)
-  (slot: ai-corout)
   (slot: difficulty)
   (constructor: (lambda (self name grid objects start-pos
                               gold-left clear-ladder)
@@ -393,8 +391,6 @@
                      (state 'in-game)
                      (current-time 0.)
                      (clear-ladder clear-ladder)
-                     (ai-set (empty-set))
-                     (ai-corout (new-corout (gensym 'ai) (ai-corout-body self)))
                      (difficulty 'stupid))))))
 
 ;; internal funcions
@@ -480,15 +476,11 @@
   ;; insert the object within the layer ordered list
   (level-objects-set! lvl (insert-in-ordered-list < obj (level-objects lvl)
                                                   accessor: get-layer))
-  (if (instance-of? obj 'robot)
-      (begin (pp 'added!) (register-robot-to-ai obj lvl)))
   (grid-update (level-grid lvl) obj))
 
 (define (level-delete! obj lvl)
   (update! lvl level objects
            (lambda (objs) (list-remove eq? obj objs)))
-  (if (instance-of? obj 'robot)
-      (unregister-robot-to-ai obj lvl))
   (level-cache-remove! obj lvl)
   (set-fields! obj game-object ((width 0) (height 0)))
   (grid-update (level-grid lvl) obj))
@@ -993,13 +985,7 @@
 
 ;;; AI
 
-(define (register-robot-to-ai robot level)
-  (update! level level ai-set (lambda (set) (set-add eq? robot set))))
-(define (unregister-robot-to-ai robot level)
-  (update! level level ai-set (lambda (set) (set-remove eq? robot set))))
-
 (define (immobile-ai robot level)
-  (pp `(robot ,(robot-id robot) is immobile))
   (robot-velocity-set! robot point-zero))
 
 (define (seeker-ai robot level)
@@ -1007,47 +993,16 @@
          (dir (point-sub player robot))
          (scaled-dir
           (point-scalar-mult dir (* robot-movement-speed (point-norm dir)))))
-    (pp `(velocity of robot ,(robot-id robot) is now (,(point-x scaled-dir)
-                                                      ,(point-y scaled-dir))))
     (robot-velocity-set! robot scaled-dir)))
 
-(define (ai-corout-body level)
-  (define (get-ai-fun difficulty)
-    (case difficulty
-      ((stupid) immobile-ai)
-      ((easy) seeker-ai)
-      (else immobile-ai)))
-  (lambda ()
-    (let ((ai-fun (get-ai-fun (level-difficulty level))))
-     (let loop ()
-       (for-each (flip ai-fun level) (level-ai-set level))
-       (corout-pause)
-       (loop)))))
+(define (get-ai-fun difficulty)
+  (case difficulty
+    ((stupid) immobile-ai)
+    ((easy) seeker-ai)
+    (else immobile-ai)))
 
-(define (advance-ai! level)
-  (yield-to (level-ai-corout level) 
-            for: 0.01 
-            forced-yield: corout-pause))
-
-;; (define (mask-velo v)
-;;     (define (mask x val) (if (= x val) robot-movement-speed 0))
-;;     (let* ((vx (point-x v))
-;;            (vy (point-y v))
-;;            (dir (cond
-;;                  ((and (robot-can-go-down? robot)
-;;                        (< vy 0))
-;;                   vy)
-;;                  ((and (robot-can-climb-up? robot)
-;;                        (> vy 0))
-;;                   vy)
-;;                  (else (if (> vy vx) vy vx))))
-;;            (mult (if (>= dir 0) 1 -1)))
-;;       (new point (* mult (mask vx dir)) (* mult (mask vy dir)))))
-
-;; (define (fetch-next-ai-move! robot level)
-;;   (let ((next-velocity
-;;          (table-ref (robot-id robot) (level-ai-table level) (point-zero))))
-;;    (robot-velocity-set! robot next-velocity)))
+(define (run-ai robot level)
+  ((get-ai-fun (level-difficulty level)) robot level))
 
 ;;; Animation
 
@@ -1065,7 +1020,7 @@
              (move! p level k))))
 
 (define-method (animate (r robot) level)
-  ;;(fetch-next-ai-move! r level)
+  (run-ai r level)
   (call/cc (lambda (k)
              (if (not (human-like-can-go-forward? r))
                  (robot-velocity-set!
@@ -1196,7 +1151,6 @@
     (change-current-level level (create-level-choice-menu)))
    (else
     (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
-    ;;(advance-ai! level)
     (if (> (level-current-time level) (level-time-limit level))
         (level-game-over! level)
         (begin
