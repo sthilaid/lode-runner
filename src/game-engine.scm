@@ -71,6 +71,9 @@
         (y-fact (if (memq 'y options) -1 1)))
     (new point (* x-fact (point-x dir)) (* y-fact (point-y dir)))))
 
+(define (point->list p) (list (point-x p) (point-y p)))
+(define (list->point l) (new point (car l) (cadr l)))
+
 (define (triangle->list t)
   (list (triangle-p1 t) (triangle-p2 t) (triangle-p3 t)))
 
@@ -391,7 +394,7 @@
                      (state 'in-game)
                      (current-time 0.)
                      (clear-ladder clear-ladder)
-                     (difficulty 'stupid))))))
+                     (difficulty 'easy))))))
 
 ;; internal funcions
 (define (level-cache-add! obj level)
@@ -991,9 +994,14 @@
 (define (seeker-ai robot level)
   (let* ((player (level-get 'player level))
          (dir (point-sub player robot))
-         (scaled-dir
-          (point-scalar-mult dir (* robot-movement-speed (point-norm dir)))))
-    (robot-velocity-set! robot scaled-dir)))
+         (y-axis? (> (abs (point-y dir)) (abs (point-x dir))))
+         (velo (if y-axis?
+                   (new point 0 robot-movement-speed)
+                   (new point robot-movement-speed 0)))
+         (factor (if (< (if y-axis? (point-y dir) (point-x dir)) 0)
+                     -1
+                     1)))
+    (robot-velocity-set! robot (point-scalar-mult velo factor))))
 
 (define (get-ai-fun difficulty)
   (case difficulty
@@ -1293,7 +1301,6 @@
 
 (define-method (render (hb handbar))
   (render-object hb handbar 'regular 'bar))
-
 (define-method (render (p player))
   (render-object p player (player-facing-direction p) (player-state p)))
 
