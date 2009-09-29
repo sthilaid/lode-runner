@@ -21,8 +21,6 @@
 (define-class state-machine ()
   (class-slot: desc)
   (slot: current-state)
-  (slot: current-action)
-
   (constructor: (lambda (self)
                   ;; Use class-slots dynamically by calling the
                   ;; accessor with an instance... ^_^
@@ -30,13 +28,16 @@
                       (error "State machine descriptor for class "
                              (get-class-id self " was not set!")))
                   (let* ((desc (state-machine-desc self))
-                         (init-state (state-machine-desc-initial-state desc))
-                         (init-action (get-state-action desc init-state)))
-                    (set-fields! self state-machine
-                               ((current-state init-state)
-                                (current-action init-action)))))))
+                         (init-state (state-machine-desc-initial-state desc)))
+                    (set-fields! self
+                                 state-machine
+                                 ((current-state init-state)))))))
 
-
+(define (state-machine-start sm)
+  (let* ((desc (state-machine-desc sm))
+         (init-state (state-machine-desc-initial-state desc)))
+    (state-machine-current-state-set! sm init-state)
+    ((get-state-action desc init-state) sm)))
 
 (define-macro (define-state-machine
                 name
@@ -46,12 +47,25 @@
                 #!key (create-new-class? #t))
   (define (transition->method tr)
     ;; Shoul all state machines share the same genfun ? or not?
-    `(define-method (transition (from (match-member:
-                                       state-machine current-state ,(car tr)))
-                                (to   (match-value: ,(cadr tr))))
-       (state-machine-current-state-set! from to)
-       (state-machine-current-action-set! from )
-       (,(caddr tr) from)))
+    (let* ((from-state (car tr))
+           (to-state (cadr tr))
+           (action (caddr tr))
+           (from-ty (cond ((eq? from-state '*) '(from state-machine))
+                          ((symbol? from-state)
+                           `(from (match-member: state-machine current-state
+                                                 ,from-state)))
+                          (else (error "Invalid from state "
+                                       "transition syntax:" from-state))))
+           (to-ty (cond ((eq? to-state '*) 'to)
+                        ((symbol? to-state)
+                         `(to (match-value: ,to-state)))
+                     (else (error "Invalid from state transition syntax.")))))
+      `(define-method (transition ,from-ty ,to-ty)
+         (state-machine-current-state-set! from to)
+         ;; execute the transition action
+         (,(caddr tr) from)
+         ;; execute the state action
+         ((get-state-action (state-machine-desc from) to) from))))
   `(begin
      ;; Subclass the state-machine meta-class and set its state
      ;; machine descriptor
@@ -61,73 +75,47 @@
                                              ,states))
      ,@(map transition->method transitions)))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Usage exemple: Binary string parser
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define-class binary-analysis (state-machine)
-  (slot: binary-number-str)
+  (slot: bin-str)
   (slot: decimal-number)
   (constructor: (lambda (self input)
                   (init! cast: '(state-machine) self)
                   (set-fields! self binary-analysis
-                    ((binary-number-str input)
-                     (decimal-number 0))))))
+                               ((bin-str input) (decimal-number 0))))))
 
-(define (binary-analysis-next-state! obj)
-  (define (binstr->sym b) (cond ((string=? b "")  'finished!)
-                                ((string=? b "0") 'zero)
-                                ((string=? b "1") 'one)
-                                (else 'error)))
-  (let ((next-state (binstr->sym
-                     (substring
-                      (binary-analysis-binary-number-str obj) 0 1))))
-    (update! obj binary-analysis binary-number-str
-             (lambda (b) (substring b 1 (string-length b))))
-    next-state))
-(define (binary-analysis-transition-action self)
-  ((state-machine-current-action self)))
+(define (binary-analysis-next-state! ba)
+  (let ((str (binary-analysis-bin-str ba)))
+    (if (string=? str "")
+        'finished!
+        (case (string-ref str 0)
+          ((#\0) 'zero)
+          ((#\1) 'one)
+          (else 'error)))))
 
 (define-state-machine binary-analysis
   'start
   `((start ,(lambda (self)
-              (let ((next-state (binary-analysis-next-state! self)))
-                (transition self next-state))))
+              (transition self (binary-analysis-next-state! self))))
     (zero ,(lambda (self)
-             (let ((next-state (binary-analysis-next-state! self)))
-               (update! self binary-analysis decimal-number
-                        (lambda (x) (* x 2)))
-               (transition self next-state))))
+             (update! self binary-analysis bin-str
+                      (lambda (b) (substring b 1 (string-length b))))
+             (update! self binary-analysis decimal-number
+                      (lambda (x) (* x 2)))
+             (transition self (binary-analysis-next-state! self))))
     (one ,(lambda (self)
-            (let ((next-state (binary-analysis-next-state! self)))
-              (update! self binary-analysis decimal-number
-                       (lambda (x) (+ (* x 2) 1)))
-              (transition self next-state))))
+            (update! self binary-analysis bin-str
+                     (lambda (b) (substring b 1 (string-length b))))
+            (update! self binary-analysis decimal-number
+                     (lambda (x) (+ (* x 2) 1)))
+            (transition self (binary-analysis-next-state! self))))
     (error ,(lambda (_) (pp "invalid binary number!")))
     (finished! ,(lambda (self) (binary-analysis-decimal-number self))))
-  (('start 'zero binary-analysis-transition-action)
-   ('start 'one  binary-analysis-transition-action)
-   ('start 'error binary-analysis-transition-action)
-   ('one 'two binary-analysis-transition-action)
-   ('one 'finished! binary-analysis-transition-action)
-   ('one 'error binary-analysis-transition-action)
-   ('two 'one binary-analysis-transition-action)
-   ('two 'finished! binary-analysis-transition-action)
-   ('two 'error binary-analysis-transition-action))
+  ((* * (lambda (_) 'O_o)))
   create-new-class?: #f)
 
-
-;; Pseudo code
-
-;; (define-state-machine level-sm
-;;   init: game-running
-;;   exit: (game-running level-sm)
-;;   state: <init>
-;;   action: <init-action>
-;;   states: ((game-running (lambda () (for-each animate! objects)))
-;;            (paused (lambda () 'nothing))
-;;            (game-over (lambda () 'game-over-animation))
-;;            (level-cleared (lambda () 'lvl-clear-anim)))
-;;   transitions:
-;;    ((game-running paused (lambda () ...))
-;;     (paused game-running (lambda () ...))
-    
-;;     (game-running game-over (lambda () ...))
-
-;;     (game-running level-cleared (lambda () ...))))
+;;(state-machine-start (new binary-analysis "10101011"))
