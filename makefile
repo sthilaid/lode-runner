@@ -25,8 +25,8 @@ FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
 FONT_IMAGES   = wall ladder handbar gold player title_bar robot logo bb_fonts
 
-INCLUDE_FILES = declarations.scm \
-                scm-lib_.scm class.scm class_.scm opengl_.scm glu_.scm \
+INCLUDE_FILES = declarations.scm scm-lib_.scm class.scm class_.scm  \
+                state-machine.scm opengl_.scm glu_.scm \
                 texture_.scm sprite_.scm font_.scm \
                 class_.scm thread-simulation_.scm match.scm
 LIB_FILES = statprof.o1 \
@@ -55,6 +55,7 @@ GAMBIT_INCLUDE=$(PATH_TO_GAMBIT)/include
 # open-gl-ffi-PATH=git://github.com/sthilaid/open-gl-ffi.git
 # gl-fonts-PATH=git://github.com/sthilaid/gl-fonts.git
 # sdl-interface-PATH=git://github.com/sthilaid/sdl-interface.git
+# export state-machine-PATH=git://github.com/sthilaid/state-machine.git
 
 export class-PATH=../../class
 export thread-simulation-PATH=/home/dave/projet/maitrise/thread-simulation
@@ -62,6 +63,7 @@ export scm-lib-PATH=/home/dave/projet/maitrise/scm-lib
 export open-gl-ffi-PATH=/home/dave/projet/scheme/open-gl-ffi
 export gl-fonts-PATH=/home/dave/projet/maitrise/gl-fonts
 export sdl-interface-PATH=/home/dave/projet/maitrise/sdl-interface
+export state-machine-PATH=/home/dave/projet/maitrise/state-machine
 
 ## Comilation flags
 LD_OPTIONS_LIN = -lutil -lSDL -lSDL_mixer -lglut
@@ -162,6 +164,7 @@ $(eval $(call define-dependency,class,class.scm class_.scm))
 $(eval $(call define-dependency,thread-simulation, rbtree.scm match.scm \
                                   thread-simulation.scm \
                                   thread-simulation_.scm ))
+$(eval $(call define-dependency,state-machine,state-machine.scm))
 
 clean:
 	rm -rf generated $(INCLUDE_PATH) $(LIB_PATH) $(EXTERNAL_LIBS) $(SRC_PATH)/*.[oc] $(PREFIX)/lode-runner

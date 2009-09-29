@@ -1,5 +1,5 @@
 
-(include "class.scm")
+;;(include "class.scm")
 
 (define-class state-machine-desc ()
   (slot: initial-state)
@@ -29,9 +29,7 @@
                              (get-class-id self " was not set!")))
                   (let* ((desc (state-machine-desc self))
                          (init-state (state-machine-desc-initial-state desc)))
-                    (set-fields! self
-                                 state-machine
-                                 ((current-state init-state)))))))
+                    (state-machine-current-state-set! self init-state)))))
 
 (define (state-machine-start sm)
   (let* ((desc (state-machine-desc sm))
@@ -50,9 +48,9 @@
     (let* ((from-state (car tr))
            (to-state (cadr tr))
            (action (caddr tr))
-           (from-ty (cond ((eq? from-state '*) '(from state-machine))
+           (from-ty (cond ((eq? from-state '*) `(from ,name))
                           ((symbol? from-state)
-                           `(from (match-member: state-machine current-state
+                           `(from (match-member: ,name current-state
                                                  ,from-state)))
                           (else (error "Invalid from state "
                                        "transition syntax:" from-state))))
@@ -76,46 +74,3 @@
      ,@(map transition->method transitions)))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Usage exemple: Binary string parser
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define-class binary-analysis (state-machine)
-  (slot: bin-str)
-  (slot: decimal-number)
-  (constructor: (lambda (self input)
-                  (init! cast: '(state-machine) self)
-                  (set-fields! self binary-analysis
-                               ((bin-str input) (decimal-number 0))))))
-
-(define (binary-analysis-next-state! ba)
-  (let ((str (binary-analysis-bin-str ba)))
-    (if (string=? str "")
-        'finished!
-        (case (string-ref str 0)
-          ((#\0) 'zero)
-          ((#\1) 'one)
-          (else 'error)))))
-
-(define-state-machine binary-analysis
-  'start
-  `((start ,(lambda (self)
-              (transition self (binary-analysis-next-state! self))))
-    (zero ,(lambda (self)
-             (update! self binary-analysis bin-str
-                      (lambda (b) (substring b 1 (string-length b))))
-             (update! self binary-analysis decimal-number
-                      (lambda (x) (* x 2)))
-             (transition self (binary-analysis-next-state! self))))
-    (one ,(lambda (self)
-            (update! self binary-analysis bin-str
-                     (lambda (b) (substring b 1 (string-length b))))
-            (update! self binary-analysis decimal-number
-                     (lambda (x) (+ (* x 2) 1)))
-            (transition self (binary-analysis-next-state! self))))
-    (error ,(lambda (_) (pp "invalid binary number!")))
-    (finished! ,(lambda (self) (binary-analysis-decimal-number self))))
-  ((* * (lambda (_) 'O_o)))
-  create-new-class?: #f)
-
-;;(state-machine-start (new binary-analysis "10101011"))
