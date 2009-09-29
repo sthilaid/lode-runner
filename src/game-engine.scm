@@ -868,6 +868,12 @@
 
 (define-method (move! (obj human-like) level k)
   (let* ((velocity (moving-velocity obj)))
+
+    ;; if going down and on a rope, than drop the rope
+    (if (and (human-like-can-use-rope? obj)
+             (< (point-y velocity) 0))
+        (human-like-droped-rope?-set! obj #t))
+    
     (if (and (not (point-zero? velocity))
              (allowed-to-move!? obj))
         ;; the allowed-to-move!? might have changed the velocity!
@@ -1125,8 +1131,6 @@
             (player-velocity-set! player
                                   (new point 0 player-movement-speed))]
            [(down)
-            (if (human-like-can-use-rope? player)
-                (player-droped-rope?-set! player #t))
             (player-velocity-set! player
                                   (new point 0 (- player-movement-speed)))]
            [(shoot-left)
