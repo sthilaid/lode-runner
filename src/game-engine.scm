@@ -9,8 +9,8 @@
 ;; Note: The player movement speed must be multipliable to give 1 so
 ;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
 ;; ensures that the player always falls in holes on the ground...
-(define player-movement-speed 2/8)
-(define robot-movement-speed 2/8)
+(define player-movement-speed 1/4)
+(define robot-movement-speed 1/8)
 (define hole-generation-dt 1.)
 (define hole-pass-through-dt 2.)
 
@@ -231,6 +231,7 @@
   (slot: appear-stage) ; \in {disappearing empty reappearing}
   (slot: appear-cycle-state)
   (slot: can-pass-through?) ; contains the object creation time or #f
+  (slot: contained-object)
   (slot: creator) ; object that created the hole (or #f)
   (constructor:
    (lambda (self x y w h creator lvl) (init! cast: '(stage * * * * *)
@@ -238,6 +239,7 @@
            (set-fields! self hole
              ((state 0)
               (appear-cycle-state 0)
+              (contained-object #f)
               (can-pass-through? (level-current-time lvl))
               (creator creator)))
            (hole-disappearing! self))))
@@ -395,7 +397,7 @@
                      (state 'in-game)
                      (current-time 0.)
                      (clear-ladder clear-ladder)
-                     (difficulty 'easy))))))
+                     (difficulty 'hard))))))
 
 (define-state-machine level
   'level-start
@@ -547,6 +549,10 @@
 (define (hole-reappearing? h) (eq? (hole-appear-stage h) 'reappearing))
 (define (hole-reappearing! h) (hole-appear-stage-set! h 'reappearing))
 
+(define (can-fall-into-hole? h)
+  (and (not (hole-contained-object h))
+       (hole-empty? h)))
+
 ;;; Text label property functions
 
 ;; hehe, just to look better in the instantiation code
@@ -628,6 +634,11 @@
 (define-method (resolve-collision (p player) (l clear-ladder) level k)
   (resolve-collision l p level k))
 
+;;; Robot collisions
+(define-method (resolve-collision (p player) (r robot) level k)
+  (die p level))
+(define-method (resolve-collision (r robot) (p player) level k)
+  (die p level))
 
 ;;; Gold collisions
 (define-method (resolve-collision (h human-like) (g gold) level k)
@@ -924,11 +935,17 @@
                        (lambda (can-walk?)
                          (and can-walk?
                               (not (and above-a-hole?
-                                        (hole-empty? above-a-hole?))))))
-              ;; FIXME: not perfect as the player will use the
-              ;; die-cycle state while falling in a hole (but doesnt
-              ;; look so bad)
-              (if inside-a-hole? (human-like-stuck-in-hole?-set! obj #t))
+                                        (can-fall-into-hole? above-a-hole?))))))
+              ;; hole detection/resolution must be performed *before*
+              ;; other detections...
+              ;; FIXME: not perfect as because contains robot specific code
+              (if (and inside-a-hole?
+                       (or (and (instance-of? obj 'robot)
+                                (robot-y-set! obj (point-y inside-a-hole?)))
+                           ;; means the player is stuck inside a flored hole
+                           (human-like-can-go-forward? obj)))
+                  (begin (human-like-stuck-in-hole?-set! obj #t)
+                         (hole-contained-object-set! inside-a-hole? obj)))
               (for-each (lambda (col-obj)
                           (resolve-collision obj col-obj level k))
                         colliding-objects))))
@@ -971,7 +988,7 @@
 
 (define-method (die (h hole) level)
   ;; kill all who dare stand in the hole! (Mwahahaha!)
-  (for-each (flip die level) (filter human-like? (detect-collisions h level)))
+  (cond ((hole-contained-object h) => (flip die level))) 
   (call-next-method))
 
 (define-method (die (obj game-object) level)
@@ -990,21 +1007,31 @@
   (robot-velocity-set! robot point-zero))
 
 (define (seeker-ai robot level)
-  (let* ((player (level-get 'player level))
-         (dir (point-sub player robot))
-         (y-axis? (> (abs (point-y dir)) (abs (point-x dir))))
-         (velo (if y-axis?
-                   (new point 0 robot-movement-speed)
-                   (new point robot-movement-speed 0)))
-         (factor (if (< (if y-axis? (point-y dir) (point-x dir)) 0)
-                     -1
-                     1)))
-    (robot-velocity-set! robot (point-scalar-mult velo factor))))
+  (define (can-go-up/down? robot x y)
+    (if (> y 0)
+        (robot-can-climb-up? robot)
+        (or (robot-can-go-down? robot)
+            (and (robot-can-use-rope? robot)
+                 (< (abs x) 1)))))
+  (let ((player (level-get 'player level)))
+    (if player
+        (let* ((dir (point-sub player robot))
+               (y-axis? (let ((x (point-x dir))
+                              (y (point-y dir)))
+                          (and (not (zero? y))
+                               (can-go-up/down? robot x y))))
+               (velo (if y-axis?
+                         (new point 0 robot-movement-speed)
+                         (new point robot-movement-speed 0)))
+               (factor (if (< (if y-axis? (point-y dir) (point-x dir)) 0)
+                           -1
+                           1)))
+          (robot-velocity-set! robot (point-scalar-mult velo factor))))))
 
 (define (get-ai-fun difficulty)
   (case difficulty
-    ((stupid) immobile-ai)
-    ((easy) seeker-ai)
+    ((easy) immobile-ai)
+    ((hard) seeker-ai)
     (else immobile-ai)))
 
 (define (run-ai robot level)
