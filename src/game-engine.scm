@@ -1007,25 +1007,29 @@
   (robot-velocity-set! robot point-zero))
 
 (define (seeker-ai robot level)
-  (define (can-go-up/down? robot x y)
+  (define min-value 1)
+  (define (can-go-up/down? robot x-axis? y)
     (if (> y 0)
         (robot-can-climb-up? robot)
         (or (robot-can-go-down? robot)
             (and (robot-can-use-rope? robot)
-                 (< (abs x) 1)))))
+                 ;; wait to be above the player
+                 (not x-axis?)))))
   (let ((player (level-get 'player level)))
     (if player
         (let* ((dir (point-sub player robot))
-               (y-axis? (let ((x (point-x dir))
-                              (y (point-y dir)))
+               (x-axis? (>= (abs (point-x dir)) min-value))
+               (y-axis? (let ((y (point-y dir)))
                           (and (not (zero? y))
-                               (can-go-up/down? robot x y))))
-               (velo (if y-axis?
-                         (new point 0 robot-movement-speed)
-                         (new point robot-movement-speed 0)))
+                               (can-go-up/down? robot x-axis? y))))
+               (velo (cond
+                      (y-axis? (new point 0 robot-movement-speed))
+                      (x-axis? (new point robot-movement-speed 0))
+                      (else point-zero)))
                (factor (if (< (if y-axis? (point-y dir) (point-x dir)) 0)
                            -1
                            1)))
+          (pp `(,(robot-id robot) ,x-axis? ,y-axis? ,(point->list velo)))
           (robot-velocity-set! robot (point-scalar-mult velo factor))))))
 
 (define (get-ai-fun difficulty)
