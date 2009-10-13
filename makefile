@@ -25,7 +25,8 @@ FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
 FONT_IMAGES   = wall ladder handbar gold player title_bar robot logo bb_fonts
 
-INCLUDE_FILES = declarations.scm scm-lib_.scm class.scm class_.scm  \
+INCLUDE_FILES = debug-declarations.scm release-declarations.scm \
+	              scm-lib_.scm class.scm class_.scm  \
                 state-machine.scm opengl_.scm glu_.scm \
                 texture_.scm sprite_.scm font_.scm \
                 class_.scm thread-simulation_.scm match.scm
@@ -38,9 +39,14 @@ COMPILED_FILES = opengl.o1 glu.o1 texture.o1 sprite.o1 sdl-interface.o1 \
                  font.o1 \
                  $(call add-presufix,font-,.o1,$(FONT_IMAGES))
 
+TARGET=debug
+debug_DECLARATIONS=../include/debug-declarations.scm
+release_DECLARATIONS=../include/release-declarations.scm
 
-## compilers
-GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug
+
+## compilers and interpreters
+GSI=$(PATH_TO_GAMBIT)/bin/gsi -:=$(PATH_TO_GAMBIT)
+GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug -prelude '(include "$($(TARGET)_DECLARATIONS)")'
 cc=gcc
 
 ## Gambit-c location
@@ -112,7 +118,7 @@ stringify = $(foreach f,$(1),"$(f)")
 devel: $(SRC_PATH)/game-loader.scm \
 	     $(addprefix $(SRC_PATH)/,$(LIB_FILES:.o1=.scm)) \
        $(addprefix $(LIB_PATH)/,$(COMPILED_FILES))
-	gsi -:dar $< -e '(load-game $(call stringify,$(SRC_PATH)) $(call stringify,$(LIB_PATH)) (list $(call stringify,$(GAME_FILES))))'
+	$(GSI) -:dar $< -e '(load-game $(call stringify,$(SRC_PATH)) $(call stringify,$(LIB_PATH)) (list $(call stringify,$(GAME_FILES))))'
 
 run-game: $(addprefix $(LIB_PATH)/,$(GAME_FILES))
 	@echo "*** Compilation Finished ***"

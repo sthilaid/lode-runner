@@ -1,5 +1,3 @@
-(include "declarations.scm")
-
 (define (generate-font-file name)
   (let* ((font-id (path-strip-directory (path-strip-extension name)))
          (args (case (string->symbol font-id)
@@ -17,7 +15,6 @@
    (with-output-to-file (list path: (string-append "generated/font-"
                                                    font-id ".scm"))
      (lambda ()
-       (pretty-print `(begin (include "../include/declarations.scm")
-                             (include "../include/texture_.scm")
+       (pretty-print `(begin (include "../include/texture_.scm")
                              (include "../include/font_.scm")
                              (define-symmetric-font ,font-id ,@args)))))))

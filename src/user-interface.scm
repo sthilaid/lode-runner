@@ -183,6 +183,7 @@
       [(key-2)            (key-down-table-add! 'two #t)]
       [(key-c)            (key-down-table-add! 'c #t)]
       [(key-p)            (key-down-table-add! 'pause #t)]
+      [(key-r)            (key-down-table-add! 'reset #t)]
       ;; Handled directly here...
       [(key-f)            (set! display-fps? (not display-fps?))]
       [(key-q)            (request-exit)]
@@ -204,7 +205,8 @@
       [(key-1)            (key-released 'one)]
       [(key-2)            (key-released 'two)]
       [(key-c)            (key-released 'c)]
-      [(key-p)            (key-released 'pause)])))
+      [(key-p)            (key-released 'pause)]
+      [(key-r)            (key-released 'reset)])))
 
 
 ;;; Main related stuff
@@ -316,14 +318,14 @@
 (define exit-requested? #f)
 (define return #f)
 (define (quit)
-  ;;(profile-stop!)
-  ;;(write-profile-report "profiling-report")
+  (profile-stop!)
+  (write-profile-report "profiling-report")
   (pp `(average frame-rate: ,(FPS)))
   (return 0))
 
 ;; Main function which only sets up and starts the game threads
 (define (main)
-  ;;(profile-start!)
+  (profile-start!)
   (SDL::within-sdl-lifetime SDL::init-everything
                             redraw-loop))
 

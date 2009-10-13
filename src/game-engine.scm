@@ -1,4 +1,3 @@
-(include "declarations.scm")
 (include "scm-lib_.scm")
 (include "class.scm")
 (include "state-machine.scm")
@@ -418,6 +417,9 @@
 
 ;;; Option menu interface
 
+(define (level-name->file-name name)
+  (string-append "data/" name ".scm"))
+
 (define (get-levels)
   (map (lambda (l) (string-append "data/" l))
        (filter (compose (flip string=? ".scm") path-extension)
@@ -552,6 +554,20 @@
 (define (can-fall-into-hole? h)
   (and (not (hole-contained-object h))
        (hole-empty? h)))
+(define (reload-level level)
+  (load-level (level-name->file-name (level-name level))))
+
+(define (level-soft-reset current-level)
+  (let ((new-level (reload-level current-level)))
+    (set-fields! new-level level
+      ((score (level-score current-level))
+       (lives (level-lives current-level))
+       (difficulty (level-difficulty current-level))))
+    (change-current-level current-level new-level)))
+
+(define (level-hard-reset current-level)
+  (let ((new-level (reload-level current-level)))
+    (change-current-level current-level new-level)))
 
 ;;; Text label property functions
 
@@ -981,9 +997,7 @@
   (update! level level lives (lambda (x) (- x 1)))
   (if (zero? (level-lives level))
       (level-game-over! level)
-      (let ((start-pos (level-player-start-pos level)))
-        (level-add! (new player (point-x start-pos) (point-y start-pos))
-                    level)))
+      (level-soft-reset level))
   (call-next-method))
 
 (define-method (die (h hole) level)
@@ -1029,7 +1043,6 @@
                (factor (if (< (if y-axis? (point-y dir) (point-x dir)) 0)
                            -1
                            1)))
-          (pp `(,(robot-id robot) ,x-axis? ,y-axis? ,(point->list velo)))
           (robot-velocity-set! robot (point-scalar-mult velo factor))))))
 
 (define (get-ai-fun difficulty)
@@ -1161,7 +1174,8 @@
             (generate-hole player 'left  player level)]
            [(shoot-right)
             (player-facing-direction-set! player 'right)
-            (generate-hole player 'right player level)])))))
+            (generate-hole player 'right player level)]
+           [(reset) (level-soft-reset level)])))))
 
 (define (manage-pause keys-down level)
   (if (memq 'pause keys-down)
