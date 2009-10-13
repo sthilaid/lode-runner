@@ -1,6 +1,7 @@
 (include "declarations.scm")
 (include "scm-lib_.scm")
 (include "class.scm")
+(include "state-machine.scm")
 
 ;; FPS is calculated in the user interface
 (define FPS (create-bounded-simple-moving-avg 5 init-value: 60.))
@@ -366,7 +367,7 @@
                                                  (action action)
                                                  (active? #f))))))
 
-(define-class level (menu)
+(define-class level (menu state-machine)
   (slot: grid)
   (slot: obj-cache)
   (slot: score)
@@ -396,28 +397,18 @@
                      (clear-ladder clear-ladder)
                      (difficulty 'easy))))))
 
+(define-state-machine level
+  'level-start
+  identity ; dont care... yet
+  (level-start in-game game-over level-cleared)
+  ((* * (lambda (_) 'nothing-yet)))
+  create-new-class?: #f)
+
 ;; internal funcions
 (define (level-cache-add! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj) obj))
 (define (level-cache-remove! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj)))
-
-(define-macro (define-states class member state-values)
-    (define (accessor-name state)
-      (symbol-append class '- state '?))
-    (define (setter-name state)
-      (symbol-append class '- state '!))
-    `(begin
-       ,@(apply append
-                (map
-                 (lambda (val)
-                   (list
-                    `(define (,(accessor-name val) obj)
-                       (eq? (,(symbol-append class '- member) obj)
-                            ',val))
-                    `(define (,(setter-name val) obj)
-                       (,(symbol-append class '- member '-set!) obj ',val))))
-                 state-values))))
 
 ;;; General menu inteface
 (define (change-current-level menu next-menu)
@@ -472,8 +463,6 @@
          => (curry2 list-ref (option-menu-objects menu)))))
 
 ;;; Level interface
-
-(define-states level state (in-game game-over level-cleared))
 
 (define (level-add! obj lvl)
   ;; insert the object within the layer ordered list
@@ -702,65 +691,68 @@
            (and (human-like-can-use-rope? h)
                 (not (human-like-droped-rope? h))))))
 
-(define (walk-cycle! p)
-  (let* ((cycling-delta 5)
-         (cycle-length (* 4 cycling-delta)))
-    (update! p player walk-cycle-state
-             (lambda (s) (modulo (+ s 1) cycle-length)))
-    (let ((next-state
-           (case (quotient (player-walk-cycle-state p) cycling-delta)
-             ((0) 'standing-up)
-             ((1) 'standing-left)
-             ((2) 'standing-up)
-             ((3) 'standing-right)
-             (else (error "Invalid player walk cycle state")))))
-      (human-like-facing-direction-set! p (human-like-get-direction p))
-      (human-like-state-set! p next-state))))
+(define-macro (define-cyclic-animation name
+                #!key base-class cycle-delta cycle-member
+                      state-member states other-actions-fun)
+  (let ((obj (gensym 'obj))
+        (cycling-delta (gensym 'cycling-delta))
+        (cycle-length (gensym 'cycle-length))
+        (next-state (gensym 'next-state))
+        (cycle-member-getter (symbol-append base-class '- cycle-member))
+        (state-member-setter (symbol-append base-class '- state-member '-set!))
+        )
+    `(define (,name ,obj)
+       (let* ((,cycle-length (* ,cycle-delta ,(length states))))
+         (update! ,obj ,base-class ,cycle-member
+                  (lambda (s) (modulo (+ s 1) ,cycle-length)))
+         (let ((,next-state
+                (case (quotient (,cycle-member-getter ,obj) ,cycle-delta)
+                  ,@(map-with-index (lambda (i x) `((,i) ',x)) states)
+                  (else (error "Invalid " base-class " " name " cycle")))))
+           (,state-member-setter ,obj ,next-state)
+           (,other-actions-fun ,obj))))))
+
+(define-cyclic-animation walk-cycle!
+  base-class: human-like
+  cycle-delta: 5
+  cycle-member: walk-cycle-state
+  state-member: state
+  states: (standing-up standing-left standing-up standing-right)
+  other-actions-fun:
+    (lambda (obj) (human-like-facing-direction-set!
+                   obj (human-like-get-direction obj))))
 
 (define rope-states '(rope-1-right rope-2-right rope-1-left rope-2-left))
-(define (rope-cycle! p)
-  (let* ((cycling-delta 5)
-         (cycle-length (* 4 cycling-delta)))
-    (update! p player walk-cycle-state
-             (lambda (s) (modulo (+ s 1) cycle-length)))
-    (let ((next-state
-           (case (quotient (player-walk-cycle-state p) cycling-delta)
-             ((0) 'rope-1-right)
-             ((1) 'rope-2-right)
-             ((2) 'rope-1-left)
-             ((3) 'rope-2-left) 
-             (else (error "Invalid player rope cycle state")))))
-      (human-like-facing-direction-set! p (human-like-get-direction p))
-      (human-like-state-set! p next-state))))
+(define-cyclic-animation rope-cycle!
+  base-class: human-like
+  cycle-delta: 5
+  cycle-member: walk-cycle-state
+  state-member: state
+  states: (rope-1-right rope-2-right rope-1-left rope-2-left)
+  other-actions-fun:
+    (lambda (obj) (human-like-facing-direction-set!
+                   obj (human-like-get-direction obj))))
 
-(define (ascend-cycle! p)
-  (let* ((cycling-delta 5)
-         (cycle-length (* 2 cycling-delta)))
-    (update! p player walk-cycle-state
-             (lambda (s) (modulo (+ s 1) cycle-length)))
-    (let ((next-state
-           (case (quotient (player-walk-cycle-state p) cycling-delta)
-             ((0) 'left)
-             ((1) 'right)
-             (else (error "Invalid player walk cycle state")))))
-      (human-like-facing-direction-set! p next-state)
-      (human-like-state-set! p 'ladder))))
+(define-cyclic-animation ascend-cycle!
+  base-class: human-like
+  cycle-delta: 5
+  cycle-member: walk-cycle-state
+  state-member: facing-direction
+  states: (left right)
+  other-actions-fun:
+    (lambda (obj) (human-like-state-set! obj 'ladder)))
 
 (define (fall-cycle! p)
   (human-like-state-set! p 'jumping))
 
-(define (dying-cycle! p)
-  (let* ((cycling-delta 10)
-         (cycle-length (* 2 cycling-delta)))
-    (update! p player walk-cycle-state
-             (lambda (s) (modulo (+ s 1) cycle-length)))
-    (let ((next-state
-           (case (quotient (player-walk-cycle-state p) cycling-delta)
-             ((0) 'left)
-             ((1) 'right)
-             (else (error "Invalid player walk cycle state")))))
-      (human-like-facing-direction-set! p next-state)
-      (human-like-state-set! p 'jumping))))
+(define-cyclic-animation dying-cycle!
+  base-class: human-like
+  cycle-delta: 10
+  cycle-member: walk-cycle-state
+  state-member: facing-direction
+  states: (left right)
+  other-actions-fun:
+    (lambda (obj) (human-like-state-set! obj 'jumping)))
 
 (define (shoot-cycle! p)
   (human-like-state-set! p 'shoot))
