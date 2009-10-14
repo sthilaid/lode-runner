@@ -376,11 +376,12 @@
   (slot: gold-left)
   (slot: lives)
   (slot: time-limit)
-  (slot: paused?)
-  (slot: state)
+  (slot: frozen?)
   (slot: current-time)
   (slot: clear-ladder)
   (slot: difficulty)
+  (slot: last-hole-creation-time)
+  (slot: controller)
   (constructor: (lambda (self name grid objects start-pos
                               gold-left clear-ladder)
                   (init! cast: '(menu * *) self name objects)
@@ -392,17 +393,33 @@
                      (gold-left gold-left)
                      (lives 3)
                      (time-limit 60.)
-                     (paused? #f)
-                     (state 'in-game)
+                     (frozen? #f)
                      (current-time 0.)
                      (clear-ladder clear-ladder)
-                     (difficulty 'hard))))))
+                     (difficulty 'hard)
+                     (last-hole-creation-time -1.)))
+                  (state-machine-start self))))
 
 (define-state-machine level
-  'level-start
-  identity ; dont care... yet
-  (level-start in-game game-over level-cleared)
-  ((* * (lambda (_) 'nothing-yet)))
+  'start
+  (lambda (x) (level-controller-set! x level-start-controller))
+  (start in-game game-over level-cleared paused)
+  ((* start (lambda (x)
+              (level-controller-set! x level-start-controller)
+              level-start-controller))
+   (* in-game (lambda (x)
+                (level-controller-set! x level-in-game-controller)
+                level-in-game-controller))
+   (* game-over (lambda (x)
+                  (level-controller-set! x level-game-over-controller)
+                  level-game-over-controller))
+   (* level-cleared (lambda (x)
+                      (level-controller-set! x level-cleared-controller)
+                      level-cleared-controller))
+   (* paused (lambda (x)
+               (level-controller-set! x level-paused-controller)
+               level-paused-controller))
+   (* * (lambda (_) (error "unknown state transition"))))
   create-new-class?: #f)
 
 ;; internal funcions
@@ -504,45 +521,44 @@
          (>= y 0))))
 
 (define generate-hole
-  (let ((last-hole-creation-time -1.)) ; private local var...
-    (lambda (p direction creator lvl)
-
-      ;; only create a hole if none where created for
-      ;; hole-generation-dt secs...
-      (let ((now (level-current-time lvl)))
-        (if (>= (- now last-hole-creation-time)
-                hole-generation-dt)
-            (let* ((hole-x-offset (cdr (assq direction
-                                             `((left . -2) (right . 2)))))
-                   ;; objects that collides with the potential hole,
-                   ;; classified per grid cells
-                   (objects-colliding-per-grid-cell
-                    (map (curry2 grid-get (level-grid lvl))
-                                 (get-grid-cells p
-                                                 x-offset: hole-x-offset
-                                                 y-offset: -1
-                                                 width: 2
-                                                 height: 1)))
-                   (can-create-hole?
-                    (and
-                     ;; every grid cell must possess a wall (so that
-                     ;; we dont create holes in thin air...
-                     (forall (curry2 exists (flip instance-of? 'wall))
-                             objects-colliding-per-grid-cell)
-                     ;; and we can't create holes on top of other
-                     ;; objects (holes, ladders, etc...)
-                     (forall (flip instance-of? 'wall)
-                             (fold-l (curry2* set-union eq?)
-                                     '()
-                                     objects-colliding-per-grid-cell)))))
-              (if can-create-hole?
-                  (let* ((x (+ (player-x p) hole-x-offset))
-                         (y (floor (- (player-y p) 2)))
-                         (h (new hole x y 2 2 creator lvl)))
-                    (set! last-hole-creation-time now)
-                    (human-like-shooting?-set! creator #t)
-                    (and (within-grid-bounds? h)
-                         (level-add! h lvl))))))))))
+  (lambda (p direction creator lvl)
+    (let ((last-hole-creation-time (level-last-hole-creation-time lvl)))
+     ;; only create a hole if none where created for
+     ;; hole-generation-dt secs...
+     (let ((now (level-current-time lvl)))
+       (if (>= (- now last-hole-creation-time)
+               hole-generation-dt)
+           (let* ((hole-x-offset (cdr (assq direction
+                                            `((left . -2) (right . 2)))))
+                  ;; objects that collides with the potential hole,
+                  ;; classified per grid cells
+                  (objects-colliding-per-grid-cell
+                   (map (curry2 grid-get (level-grid lvl))
+                        (get-grid-cells p
+                                        x-offset: hole-x-offset
+                                        y-offset: -1
+                                        width: 2
+                                        height: 1)))
+                  (can-create-hole?
+                   (and
+                    ;; every grid cell must possess a wall (so that
+                    ;; we dont create holes in thin air...
+                    (forall (curry2 exists (flip instance-of? 'wall))
+                            objects-colliding-per-grid-cell)
+                    ;; and we can't create holes on top of other
+                    ;; objects (holes, ladders, etc...)
+                    (forall (flip instance-of? 'wall)
+                            (fold-l (curry2* set-union eq?)
+                                    '()
+                                    objects-colliding-per-grid-cell)))))
+             (if can-create-hole?
+                 (let* ((x (+ (player-x p) hole-x-offset))
+                        (y (floor (- (player-y p) 2)))
+                        (h (new hole x y 2 2 creator lvl)))
+                   (set! last-hole-creation-time now)
+                   (human-like-shooting?-set! creator #t)
+                   (and (within-grid-bounds? h)
+                        (level-add! h lvl))))))))))
 
 (define (hole-disappearing? h) (eq? (hole-appear-stage h) 'disappearing))
 (define (hole-disappearing! h) (hole-appear-stage-set! h 'disappearing))
@@ -1175,7 +1191,7 @@
            [(shoot-right)
             (player-facing-direction-set! player 'right)
             (generate-hole player 'right player level)]
-           [(reset) (level-soft-reset level)])))))
+           [(reset) (level-hard-reset level)])))))
 
 (define (manage-pause keys-down level)
   (if (memq 'pause keys-down)
@@ -1183,9 +1199,16 @@
         ;; Unclean... causes unwanted circular coupling with the
         ;; user-interface... :(
         (key-down-table-reset-key 'pause)
-        (update! level level paused? (lambda (x) (not x))))))
+        (let ((frozen? (update! level level frozen? (lambda (x) (not x)))))
+          (if frozen?
+              (level-paused! level)
+              (level-in-game! level))))))
 
-(define-method (advance-frame! (level level) keys-down keys-up)
+(define (level-start-controller level keys-down keys-up)
+  (pp 'test)
+  (transition level 'in-game))
+
+(define (level-in-game-controller level keys-down keys-up)
   ;; not sure what is the good approach at moving objects. The player
   ;; speed is reset every frame.
   (cond ((level-get 'player level) =>
@@ -1205,6 +1228,22 @@
         (begin
           (for-each (flip process-key level) keys-down)
           (for-each (flip animate level) (level-objects level))))))
+  level-in-game-controller)
+
+(define (level-paused-controller level keys-down keys-up)
+  (println "Todo: level-paused-controller")
+  level-paused-controller)
+
+(define (level-cleared-controller level keys-down keys-up)
+  (println "Todo: level-cleared-controller")
+  level-cleared-controller)
+
+(define (level-game-over-controller level keys-down keys-up)
+  (println "Todo: level-game-over-controller")
+  level-game-over-controller)
+
+(define-method (advance-frame! (level level) keys-down keys-up)
+  (update! level level controller (lambda (c) (c level keys-down keys-up)))
   (menu-continuation-menu level))
 
 

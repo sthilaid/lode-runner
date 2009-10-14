@@ -1,5 +1,10 @@
-## utility
+##############################################################################
+## utilities
+##############################################################################
 add-presufix = $(foreach f, $(3), $(1)$(f)$(2))
+
+# will only copy the used depency files. This implies that the
+# recursive dependencies must be added to this project's depencies.
 define define-dependency
 DEPENDENCIES += $(1)
 $(addprefix $$(SRC_PATH)/,$(2)) : setup-$(1)
@@ -9,17 +14,21 @@ setup-$(1):
 	 cd $$(EXTERNAL_LIBS) && git clone $$($(1)-PATH)
  endif
 	 cd $$(EXTERNAL_LIBS)/$(1) && git pull
-	 rsync -c $$(EXTERNAL_LIBS)/$(1)/src/* $$(SRC_PATH)/
+	 cd $$(EXTERNAL_LIBS)/$(1)/src/ && rsync -c $(2) ../../../$$(SRC_PATH)/
 endef
 
+##############################################################################
 ## project paths
+##############################################################################
 PREFIX=.
 SRC_PATH=src
 INCLUDE_PATH=$(PREFIX)/include
 LIB_PATH=$(PREFIX)/lib
 EXTERNAL_LIBS=$(PREFIX)/external-libs
 
+##############################################################################
 ## Projet files
+##############################################################################
 SPRITE_FILES = $(wildcard sprites/*.ppm) $(wildcard sprites/*.bmp)
 FONT_FILES = $(wildcard fonts/*.ppm) $(wildcard fonts/*.scm)
 SOUND_FILES = $(wildcard sounds/*.wav)
@@ -43,10 +52,11 @@ TARGET=debug
 debug_DECLARATIONS=../include/debug-declarations.scm
 release_DECLARATIONS=../include/release-declarations.scm
 
-
+##############################################################################
 ## compilers and interpreters
-GSI=$(PATH_TO_GAMBIT)/bin/gsi -:=$(PATH_TO_GAMBIT)
-GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT) -debug -prelude '(include "$($(TARGET)_DECLARATIONS)")'
+##############################################################################
+GSI=$(PATH_TO_GAMBIT)/bin/gsi -:=$(PATH_TO_GAMBIT),dar
+GSC=$(PATH_TO_GAMBIT)/bin/gsc -:=$(PATH_TO_GAMBIT),dar -debug -prelude '(include "$($(TARGET)_DECLARATIONS)")'
 cc=gcc
 
 ## Gambit-c location
@@ -54,7 +64,10 @@ PATH_TO_GAMBIT=/opt/gambit-c
 GAMBIT_LIB=$(PATH_TO_GAMBIT)/lib
 GAMBIT_INCLUDE=$(PATH_TO_GAMBIT)/include
 
+##############################################################################
 ## Some scheme libraries git repos
+##############################################################################
+
 # class-PATH=git://github.com/sthilaid/class.git
 # thread-simulation-PATH=git://github.com/sthilaid/thread-simulation.git
 # scm-lib-PATH=git://github.com/sthilaid/scm-lib.git
@@ -63,7 +76,7 @@ GAMBIT_INCLUDE=$(PATH_TO_GAMBIT)/include
 # sdl-interface-PATH=git://github.com/sthilaid/sdl-interface.git
 # export state-machine-PATH=git://github.com/sthilaid/state-machine.git
 
-export class-PATH=../../class
+export class-PATH=/home/dave/projet/maitrise/class
 export thread-simulation-PATH=/home/dave/projet/maitrise/thread-simulation
 export scm-lib-PATH=/home/dave/projet/maitrise/scm-lib
 export open-gl-ffi-PATH=/home/dave/projet/scheme/open-gl-ffi
@@ -71,7 +84,9 @@ export gl-fonts-PATH=/home/dave/projet/maitrise/gl-fonts
 export sdl-interface-PATH=/home/dave/projet/maitrise/sdl-interface
 export state-machine-PATH=/home/dave/projet/maitrise/state-machine
 
+##############################################################################
 ## Comilation flags
+##############################################################################
 LD_OPTIONS_LIN = -lutil -lSDL -lSDL_mixer -lglut
 LD_OPTIONS_COMMON =-L$(GAMBIT_LIB) -L$(GL_LIB) -L$(SDL_LIB) -L$(SDL_mixer_LIB) -lgambc 
 
@@ -97,6 +112,10 @@ LD_OPTIONS = $(LD_OPTIONS_COMMON) $(LD_OPTIONS_LIN)
 .SUFFIXES: .c .scm .o .o1 .m
 .PHONY: all clean shared-objects tarball welcome
 
+##############################################################################
+## Compilation Targets
+##############################################################################
+
 all: welcome prefix include lib
 
 prefix:
@@ -118,14 +137,14 @@ stringify = $(foreach f,$(1),"$(f)")
 devel: $(SRC_PATH)/game-loader.scm \
 	     $(addprefix $(SRC_PATH)/,$(LIB_FILES:.o1=.scm)) \
        $(addprefix $(LIB_PATH)/,$(COMPILED_FILES))
-	$(GSI) -:dar $< -e '(load-game $(call stringify,$(SRC_PATH)) $(call stringify,$(LIB_PATH)) (list $(call stringify,$(GAME_FILES))))'
+	$(GSI) $< -e '(load-game $(call stringify,$(SRC_PATH)) $(call stringify,$(LIB_PATH)) (list $(call stringify,$(GAME_FILES))))'
 
 run-game: $(addprefix $(LIB_PATH)/,$(GAME_FILES))
 	@echo "*** Compilation Finished ***"
 	@echo
 	@echo "Launching game...."
 	@echo
-	gsi -:dar $^ -e '(main)'
+	$(GSI) $^ -e '(main)'
 
 $(LIB_PATH)/font-%.o1: generated/font-%.scm
 	mkdir -p $(LIB_PATH)
@@ -158,7 +177,9 @@ endif
 	@echo
 	@echo "*** Beginning Compilation ***"
 
-### External Scheme library dependencies only used if not developping localy
+##############################################################################
+### External Scheme library dependencies
+##############################################################################
 $(eval $(call define-dependency,scm-lib,scm-lib.scm scm-lib_.scm))
 $(eval $(call define-dependency,open-gl-ffi,opengl.scm opengl_.scm \
                                 glu.scm glu_.scm))
