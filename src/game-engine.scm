@@ -408,7 +408,6 @@
                       (list (flash 15)
                             (lifetime 180 (lambda (l lvl)
                                             (level-delete! l lvl)
-                                            (pp `(was: ,(level-current-state lvl)))
                                             (transition lvl 'start)))))))
       (gui-centered?-set! label #t)
       (level-add! label lvl)))
@@ -419,7 +418,7 @@
         (let ((lab
                (new label
                     'start-counter
-                    (number->string counter)
+                    (if (zero? counter) "Start!" (number->string counter))
                     24 18
                     'green
                     (list (lifetime 60
@@ -427,12 +426,10 @@
                                       (level-delete! l lvl)
                                       (make-counter-label (- counter 1))))))))
           (gui-centered?-set! lab #t)
-          (gui-scale-ratio-set! lab 1.3)
+          (gui-scale-ratio-set! lab 4.)
           (pp 'adding)
           (level-add! lab lvl))
-        (begin
-          (pp `(was: ,(level-current-state lvl)))
-          (transition lvl 'in-game))))
+        (transition lvl 'in-game)))
   (make-counter-label 3))
 
 (define-state-machine level
@@ -441,10 +438,10 @@
   (pre-game start in-game game-over level-cleared paused)
   ((pre-game start level-start-transition)
    (* in-game (lambda (x) 'todo))
-   ;; (* game-over (lambda (x) 'todo))
-   ;; (* level-cleared (lambda (x) 'todo))
-   ;; (* paused (lambda (x) 'todo))
-   ;;(* * (lambda (self) (println "unknown transtion into " to)))
+   (* game-over (lambda (x) 'todo))
+   (* level-cleared (lambda (x) 'todo))
+   (* paused (lambda (x) 'todo))
+   (* * (lambda (self) (println "unknown transtion into " to)))
    )
   create-new-class?: #f)
 
@@ -1421,11 +1418,15 @@
              (y (rect-y world-coords))
              (w (rect-width world-coords))
              (h (rect-height world-coords))
-             (renderer (lambda ()
-                         (render-string x y (label-text l) (label-color l)
-                                        centered?: (gui-centered? l)))))
-        (cond ((gui-scale-ratio l) => (flip rescale renderer))
-              (else (renderer))))))
+             (renderer
+              (lambda ()
+                (render-string 0 0 (label-text l) (label-color l)
+                               centered?: (gui-centered? l))))
+             (scaled-renderer
+              (cond ((gui-scale-ratio l)
+                     => (lambda (x) (lambda () (rescale x renderer))))
+                    (else renderer))))
+        (translate x y scaled-renderer))))
 
 (define-method (render (lvl (match-member: level current-state pre-game)))
   (render (level-get 'pre-game-label lvl))
