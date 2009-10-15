@@ -301,32 +301,35 @@
 
 (define-class gui (game-object)
   (slot: visible?)
-  ;;(slot: zoom-ratio)
-  (constructor: (lambda (self id x y w h visible?)
+  (slot: centered?)
+  (slot: scale-ratio)
+  (constructor: (lambda (self id x y w h visible? centered? scale-ratio)
                   ;; FIXME: usage of zeros can be potentially buggy?
                   (init! cast: '(game-object * * * * *)
                          self id x y w h)
-                  (set-fields! self gui ((visible? visible?))))))
+                  (set-fields! self gui ((visible? visible?)
+                                         (centered? centered?)
+                                         (scale-ratio scale-ratio))))))
 
 (define-class label (gui)
   (slot: text)
   (slot: color)
   (slot: properties)
   (constructor: (lambda (self text x y color property-list)
-                  (init! cast: '(gui * * * * * *)
-                         self (gensym 'label) x y 0 0 #t)
+                  (init! cast: '(gui * * * * * * * *)
+                         self (gensym 'label) x y 0 0 #t #f #f)
+                  (set-fields! self label
+                    ((text text)
+                     (properties property-list)
+                     (color color)))))
+  (constructor: (lambda (self id text x y color property-list)
+                  (init! cast: '(gui * * * * * * * *)
+                         self id x y 0 0 #t #f #f)
                   (set-fields! self label
                     ((text text)
                      (properties property-list)
                      (color color))))))
 
-;; (define-class image (gui)
-;;   (slot: texture)
-;;   (constructor: (lambda (self texture x y w h)
-;;                   (init! cast: '(gui * * * *)
-;;                          self (gensym 'image) x y w h #t)
-;;                   (set-fields! self label
-;;                     ((texture texture))))))
 
 ;; since the control flow is described by the dispatch made on the
 ;; menu instance, the continuation can be manipulated by changing this
@@ -381,7 +384,6 @@
   (slot: clear-ladder)
   (slot: difficulty)
   (slot: last-hole-creation-time)
-  (slot: controller)
   (constructor: (lambda (self name grid objects start-pos
                               gold-left clear-ladder)
                   (init! cast: '(menu * *) self name objects)
@@ -400,23 +402,50 @@
                      (last-hole-creation-time -1.)))
                   (state-machine-start self))))
 
+(define (pre-game-transition lvl)
+  (println "pregame!\n")
+  (let ((label (new label 'pre-game-label "Player 1" 24 18 'white
+                      (list (flash 15)
+                            (lifetime 180 (lambda (l lvl)
+                                            (level-delete! l lvl)
+                                            (pp `(was: ,(level-current-state lvl)))
+                                            (transition lvl 'start)))))))
+      (gui-centered?-set! label #t)
+      (level-add! label lvl)))
+
+(define (level-start-transition lvl)
+  (define (make-counter-label counter)
+    (if (>= counter 0)
+        (let ((lab
+               (new label
+                    'start-counter
+                    (number->string counter)
+                    24 18
+                    'green
+                    (list (lifetime 60
+                                    (lambda (l lvl)
+                                      (level-delete! l lvl)
+                                      (make-counter-label (- counter 1))))))))
+          (gui-centered?-set! lab #t)
+          (gui-scale-ratio-set! lab 1.3)
+          (pp 'adding)
+          (level-add! lab lvl))
+        (begin
+          (pp `(was: ,(level-current-state lvl)))
+          (transition lvl 'in-game))))
+  (make-counter-label 3))
+
 (define-state-machine level
   'pre-game
-  (lambda (x) (level-controller-set! x level-pre-game-controller))
+  pre-game-transition
   (pre-game start in-game game-over level-cleared paused)
-  ((* pre-game (lambda (x)
-                 (level-controller-set! x level-pre-game-controller)))
-   (* start (lambda (x)
-              (level-controller-set! x level-start-controller)))
-   (* in-game (lambda (x)
-                (level-controller-set! x level-in-game-controller)))
-   (* game-over (lambda (x)
-                  (level-controller-set! x level-game-over-controller)))
-   (* level-cleared (lambda (x)
-                      (level-controller-set! x level-cleared-controller)))
-   (* paused (lambda (x)
-               (level-controller-set! x level-paused-controller)))
-   (* * (lambda (_) (error "unknown state transition"))))
+  ((pre-game start level-start-transition)
+   (* in-game (lambda (x) 'todo))
+   ;; (* game-over (lambda (x) 'todo))
+   ;; (* level-cleared (lambda (x) 'todo))
+   ;; (* paused (lambda (x) 'todo))
+   ;;(* * (lambda (self) (println "unknown transtion into " to)))
+   )
   create-new-class?: #f)
 
 ;; internal funcions
@@ -587,19 +616,19 @@
 ;; hehe, just to look better in the instantiation code
 (define property-list list)
 
-(define (lifetime framecount)
+(define (lifetime framecount action)
   (let ((x 0))
-   (lambda (label level)
+   (lambda (obj level)
      (set! x (+ x 1))
      (if (>= x framecount)
-         (die label level)))))
+         (action obj level)))))
 
 (define (flash frame-interval)
   (let ((x 0))
-    (lambda (label level)
+    (lambda (obj level)
       (set! x (modulo (+ x 1) frame-interval))
       (if (zero? x)
-          (update! label label visible? (lambda (v?) (not v?)))))))
+          (update! obj gui visible? (lambda (v?) (not v?)))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1001,7 +1030,7 @@
                      (number->string score-value)
                      (point-x g) (point-y g)
                      'red
-                     (property-list (lifetime 120)
+                     (property-list (lifetime 120 die)
                                     (flash 10)))
                 level)
     (call-next-method)))
@@ -1193,7 +1222,7 @@
 (define (manage-pause keys-down level)
   (if (memq 'pause keys-down)
       (begin
-        ;; Unclean... causes unwanted circular coupling with the
+        ;; unclean... causes unwanted circular coupling with the
         ;; user-interface... :(
         (key-down-table-reset-key 'pause)
         (let ((frozen? (update! level level frozen? (lambda (x) (not x)))))
@@ -1201,15 +1230,20 @@
               (level-paused! level)
               (level-in-game! level))))))
 
-(define (level-pre-game-controller level keys-down keys-up)
-  (pp 'test)
-  (transition level 'start))
+(define-method (advance-frame!
+                (level (match-member: level current-state pre-game))
+                keys-down keys-up)
+  (animate (level-get 'pre-game-label level) level)
+  (menu-continuation-menu level))
 
-(define (level-start-controller level keys-down keys-up)
-  (pp 'test)
-  (transition level 'in-game))
+(define-method (advance-frame! (level (match-member: level current-state start))
+                               keys-down keys-up)
+  (animate (level-get 'start-counter level) level)
+  (menu-continuation-menu level))
 
-(define (level-in-game-controller level keys-down keys-up)
+(define-method (advance-frame!
+                (level (match-member: level current-state in-game))
+                keys-down keys-up)
   ;; not sure what is the good approach at moving objects. The player
   ;; speed is reset every frame.
   (cond ((level-get 'player level) =>
@@ -1228,19 +1262,25 @@
         (level-game-over! level)
         (begin
           (for-each (flip process-key level) keys-down)
-          (for-each (flip animate level) (level-objects level)))))))
+          (for-each (flip animate level) (level-objects level))))))
+  (menu-continuation-menu level))
 
-(define (level-paused-controller level keys-down keys-up)
-  (println "Todo: level-paused-controller"))
+(define-method (advance-frame!
+                (level (match-member: level current-state paused))
+                keys-down keys-up)
+  (println "Todo: level-paused-controller")
+  (menu-continuation-menu level))
 
-(define (level-cleared-controller level keys-down keys-up)
-  (println "Todo: level-cleared-controller"))
+(define-method (advance-frame!
+                (level (match-member: level current-state level-cleared))
+                keys-down keys-up)
+  (println "Todo: level-cleared-controller")
+  (menu-continuation-menu level))
 
-(define (level-game-over-controller level keys-down keys-up)
-  (println "Todo: level-game-over-controller"))
-
-(define-method (advance-frame! (level level) keys-down keys-up)
-  ((level-controller level) level keys-down keys-up)
+(define-method (advance-frame!
+                (level (match-member: level current-state game-over))
+                keys-down keys-up)
+  (println "Todo: level-game-over-controller")
   (menu-continuation-menu level))
 
 
@@ -1346,19 +1386,6 @@
    (render-string 281 y (number->string (level-lives level)) 'white)
    (render-string 321 y (format-score 0) 'white)))
 
-(define-method (render (lvl level))
-  (render-title-bar lvl)
-  
-  ;; it is expected that the object list is ordered with increasing
-  ;; layer order...
-  (for-each render (level-objects lvl))
-
-  (cond
-   ((level-paused? lvl) (render-pause-screen))
-   ((level-game-over? lvl) '(render-game-over)) ;; TODO
-   ((level-level-cleared? lvl) '(render-next-level-anim)) ;; TODO??
-   ))
-
 (define-method (render (w wall))
   (render-object w wall 'pink 'wall))
 
@@ -1393,5 +1420,34 @@
              (x (rect-x world-coords))
              (y (rect-y world-coords))
              (w (rect-width world-coords))
-             (h (rect-height world-coords)))
-        (render-string x y (label-text l) (label-color l)))))
+             (h (rect-height world-coords))
+             (renderer (lambda ()
+                         (render-string x y (label-text l) (label-color l)
+                                        centered?: (gui-centered? l)))))
+        (cond ((gui-scale-ratio l) => (flip rescale renderer))
+              (else (renderer))))))
+
+(define-method (render (lvl (match-member: level current-state pre-game)))
+  (render (level-get 'pre-game-label lvl))
+  )
+
+(define-method (render (lvl (match-member: level current-state start)))
+  (render-title-bar lvl)
+  (for-each render (level-objects lvl)))
+
+(define-method (render (lvl (match-member: level current-state in-game)))
+  (render-title-bar lvl)
+  
+  ;; it is expected that the object list is ordered with increasing
+  ;; layer order...
+  (for-each render (level-objects lvl))
+
+  (cond
+   ((level-paused? lvl) (render-pause-screen))
+   ((level-game-over? lvl) '(render-game-over)) ;; TODO
+   ((level-level-cleared? lvl) '(render-next-level-anim)) ;; TODO??
+   ))
+
+(define-method (render (l level))
+  (println "unimplemented level renderer (state = "
+           (level-current-state l) ")"))

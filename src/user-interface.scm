@@ -63,15 +63,13 @@
          (glVertex2i x (- y 2)))
   (glEnd))
 
-(define (center thunk)
-  (let ((x (/ screen-max-x 2))
-        (y (/ screen-max-y 2)))
-    (glMatrixMode GL_MODELVIEW)
-    (glPushMatrix)
-    ;;(glLoadIdentity)
-    (glTranslatef (exact->inexact x) (exact->inexact y) 0.)
-    (thunk)
-    (glPopMatrix)))
+(define (translate x y thunk)
+  (glMatrixMode GL_MODELVIEW)
+  (glPushMatrix)
+  ;;(glLoadIdentity)
+  (glTranslatef (exact->inexact x) (exact->inexact y) 0.)
+  (thunk)
+  (glPopMatrix))
 
 (define (rescale scaling-factor thunk)
   (glMatrixMode GL_MODELVIEW)
@@ -92,11 +90,11 @@
     (glVertex2i w 0)
     (glEnd)
     )
-  (center
-   (lambda ()
-     (rescale 3.
-              (lambda () 
-                (render-string 0 0  "PAUSE" 'red centered?: #t))))))
+  (translate (/ screen-max-x 2) (/ screen-max-y 2)
+             (lambda ()
+               (rescale 3.
+                        (lambda () 
+                          (render-string 0 0  "PAUSE" 'red centered?: #t))))))
 
 (define (render-scene sdl-screen level)
   (SDL::with-locked-surface
