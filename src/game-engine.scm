@@ -401,24 +401,21 @@
                   (state-machine-start self))))
 
 (define-state-machine level
-  'start
-  (lambda (x) (level-controller-set! x level-start-controller))
-  (start in-game game-over level-cleared paused)
-  ((* start (lambda (x)
-              (level-controller-set! x level-start-controller)
-              level-start-controller))
+  'pre-game
+  (lambda (x) (level-controller-set! x level-pre-game-controller))
+  (pre-game start in-game game-over level-cleared paused)
+  ((* pre-game (lambda (x)
+                 (level-controller-set! x level-pre-game-controller)))
+   (* start (lambda (x)
+              (level-controller-set! x level-start-controller)))
    (* in-game (lambda (x)
-                (level-controller-set! x level-in-game-controller)
-                level-in-game-controller))
+                (level-controller-set! x level-in-game-controller)))
    (* game-over (lambda (x)
-                  (level-controller-set! x level-game-over-controller)
-                  level-game-over-controller))
+                  (level-controller-set! x level-game-over-controller)))
    (* level-cleared (lambda (x)
-                      (level-controller-set! x level-cleared-controller)
-                      level-cleared-controller))
+                      (level-controller-set! x level-cleared-controller)))
    (* paused (lambda (x)
-               (level-controller-set! x level-paused-controller)
-               level-paused-controller))
+               (level-controller-set! x level-paused-controller)))
    (* * (lambda (_) (error "unknown state transition"))))
   create-new-class?: #f)
 
@@ -1204,6 +1201,10 @@
               (level-paused! level)
               (level-in-game! level))))))
 
+(define (level-pre-game-controller level keys-down keys-up)
+  (pp 'test)
+  (transition level 'start))
+
 (define (level-start-controller level keys-down keys-up)
   (pp 'test)
   (transition level 'in-game))
@@ -1227,23 +1228,19 @@
         (level-game-over! level)
         (begin
           (for-each (flip process-key level) keys-down)
-          (for-each (flip animate level) (level-objects level))))))
-  level-in-game-controller)
+          (for-each (flip animate level) (level-objects level)))))))
 
 (define (level-paused-controller level keys-down keys-up)
-  (println "Todo: level-paused-controller")
-  level-paused-controller)
+  (println "Todo: level-paused-controller"))
 
 (define (level-cleared-controller level keys-down keys-up)
-  (println "Todo: level-cleared-controller")
-  level-cleared-controller)
+  (println "Todo: level-cleared-controller"))
 
 (define (level-game-over-controller level keys-down keys-up)
-  (println "Todo: level-game-over-controller")
-  level-game-over-controller)
+  (println "Todo: level-game-over-controller"))
 
 (define-method (advance-frame! (level level) keys-down keys-up)
-  (update! level level controller (lambda (c) (c level keys-down keys-up)))
+  ((level-controller level) level keys-down keys-up)
   (menu-continuation-menu level))
 
 
