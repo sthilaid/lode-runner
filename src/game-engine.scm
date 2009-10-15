@@ -330,6 +330,9 @@
                      (properties property-list)
                      (color color))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Menu definitions 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; since the control flow is described by the dispatch made on the
 ;; menu instance, the continuation can be manipulated by changing this
@@ -344,6 +347,10 @@
                              (objects objects)
                              (continuation-menu self))))))
 
+(define (change-current-level menu next-menu)
+  (menu-continuation-menu-set! menu next-menu))
+
+;;; Logo menu (game introduction)
 (define-class logo-menu (menu statefull)
   (slot: last-input-time)
   (slot: anim-cycle)
@@ -352,6 +359,7 @@
                   (set-fields! self logo-menu ((last-input-time 0)
                                                (anim-cycle 0))))))
 
+;;; Option menu (selection menu)
 (define-class option-menu (menu)
   (slot: current-choice)
   (slot: last-input-time)
@@ -370,6 +378,57 @@
                   (set-fields! self option-item ((text text)
                                                  (action action)
                                                  (active? #f))))))
+(define (level-name->file-name name)
+  (string-append "data/" name ".scm"))
+
+(define (get-levels)
+  (map (lambda (l) (string-append "data/" l))
+       (filter (compose (flip string=? ".scm") path-extension)
+               (quick-sort string-ci<? string-ci=? string-ci>?
+                           (directory-files "data")))))
+(define (create-level-option menu level-to-load)
+  (new option-item
+       (path-strip-directory (path-strip-extension level-to-load))
+       (lambda ()
+         (with-exception-catcher
+          (lambda (e) (println "Could not load level "
+                               (path-strip-directory
+                                (path-strip-extension level-to-load))))
+          (lambda ()
+           (change-current-level menu (load-level level-to-load)))))))
+
+(define (create-level-choice-menu)
+  (let* ((menu (new option-menu 'level-choice-menu '()))
+         (levels (map (curry2 create-level-option menu) (get-levels))))
+    (if (not (pair? levels))
+        (error "No level found in the data directory...")
+        (begin
+          (option-menu-objects-set! menu levels)
+          (option-menu-choose! menu 0)
+          menu))))
+
+(define (option-menu-choose! menu item-index)
+  (let* ((objs (option-menu-objects menu))
+         (item (list-ref objs item-index)))
+    (cond ((get-current-option-choice menu)
+           => (flip option-item-active?-set! #f)))
+    (option-menu-current-choice-set! menu item-index)
+    (option-item-active?-set! item #t)))
+
+(define (option-menu-choose-relative! menu op)
+  (option-menu-choose! menu (modulo (op (option-menu-current-choice menu))
+                                    (length (option-menu-objects menu)))))
+(define (option-menu-choose-prev! menu)
+  (option-menu-choose-relative! menu (flip - 1)))
+(define (option-menu-choose-next! menu)
+  (option-menu-choose-relative! menu (flip + 1)))
+
+(define (get-current-option-choice menu)
+  (cond ((option-menu-current-choice menu)
+         => (curry2 list-ref (option-menu-objects menu)))))
+
+
+;;; Level
 
 (define-class level (menu state-machine)
   (slot: grid)
@@ -451,63 +510,7 @@
 (define (level-cache-remove! obj level)
   (table-set! (level-obj-cache level) (game-object-id obj)))
 
-;;; General menu inteface
-(define (change-current-level menu next-menu)
-  (menu-continuation-menu-set! menu next-menu))
-
-;;; Option menu interface
-
-(define (level-name->file-name name)
-  (string-append "data/" name ".scm"))
-
-(define (get-levels)
-  (map (lambda (l) (string-append "data/" l))
-       (filter (compose (flip string=? ".scm") path-extension)
-               (quick-sort string-ci<? string-ci=? string-ci>?
-                           (directory-files "data")))))
-(define (create-level-option menu level-to-load)
-  (new option-item
-       (path-strip-directory (path-strip-extension level-to-load))
-       (lambda ()
-         (with-exception-catcher
-          (lambda (e) (println "Could not load level "
-                               (path-strip-directory
-                                (path-strip-extension level-to-load))))
-          (lambda ()
-           (change-current-level menu (load-level level-to-load)))))))
-
-(define (create-level-choice-menu)
-  (let* ((menu (new option-menu 'level-choice-menu '()))
-         (levels (map (curry2 create-level-option menu) (get-levels))))
-    (if (not (pair? levels))
-        (error "No level found in the data directory...")
-        (begin
-          (option-menu-objects-set! menu levels)
-          (option-menu-choose! menu 0)
-          menu))))
-
-(define (option-menu-choose! menu item-index)
-  (let* ((objs (option-menu-objects menu))
-         (item (list-ref objs item-index)))
-    (cond ((get-current-option-choice menu)
-           => (flip option-item-active?-set! #f)))
-    (option-menu-current-choice-set! menu item-index)
-    (option-item-active?-set! item #t)))
-
-(define (option-menu-choose-relative! menu op)
-  (option-menu-choose! menu (modulo (op (option-menu-current-choice menu))
-                                    (length (option-menu-objects menu)))))
-(define (option-menu-choose-prev! menu)
-  (option-menu-choose-relative! menu (flip - 1)))
-(define (option-menu-choose-next! menu)
-  (option-menu-choose-relative! menu (flip + 1)))
-
-(define (get-current-option-choice menu)
-  (cond ((option-menu-current-choice menu)
-         => (curry2 list-ref (option-menu-objects menu)))))
-
-;;; Level interface
-
+;; external functions
 (define (level-add! obj lvl)
   ;; insert the object within the layer ordered list
   (level-objects-set! lvl (insert-in-ordered-list < obj (level-objects lvl)
@@ -529,6 +532,23 @@
                                  obj)))
         (else #f)))
 
+(define (reload-level level)
+  (load-level (level-name->file-name (level-name level))))
+
+(define (level-soft-reset current-level)
+  (let ((new-level (reload-level current-level)))
+    (set-fields! new-level level
+      ((score (level-score current-level))
+       (lives (level-lives current-level))
+       (difficulty (level-difficulty current-level))))
+    (change-current-level current-level new-level)))
+
+(define (level-hard-reset current-level)
+  (let ((new-level (reload-level current-level)))
+    (change-current-level current-level new-level)))
+
+;;; Grid simplification functions
+
 (define (get-objects-below obj level)
   (fold-l (curry2* set-union eq?)
           '()
@@ -542,6 +562,8 @@
          (>= x 0)
          (< y grid-height)
          (>= y 0))))
+
+;;; hole management
 
 (define generate-hole
   (lambda (p direction creator lvl)
@@ -593,20 +615,6 @@
 (define (can-fall-into-hole? h)
   (and (not (hole-contained-object h))
        (hole-empty? h)))
-(define (reload-level level)
-  (load-level (level-name->file-name (level-name level))))
-
-(define (level-soft-reset current-level)
-  (let ((new-level (reload-level current-level)))
-    (set-fields! new-level level
-      ((score (level-score current-level))
-       (lives (level-lives current-level))
-       (difficulty (level-difficulty current-level))))
-    (change-current-level current-level new-level)))
-
-(define (level-hard-reset current-level)
-  (let ((new-level (reload-level current-level)))
-    (change-current-level current-level new-level)))
 
 ;;; Text label property functions
 
@@ -1329,7 +1337,33 @@
     (if (not (eq? state 'empty))
         (render-fontified-sprite logo x y 'logo state centered?: #t))))
 
-;;; Game level rendering
+;;; Level renderers
+
+(define-method (render (lvl (match-member: level current-state pre-game)))
+  (render (level-get 'pre-game-label lvl)))
+
+(define-method (render (lvl (match-member: level current-state start)))
+  (render-title-bar lvl)
+  (for-each render (level-objects lvl)))
+
+(define-method (render (lvl (match-member: level current-state in-game)))
+  (render-title-bar lvl)
+  
+  ;; it is expected that the object list is ordered with increasing
+  ;; layer order...
+  (for-each render (level-objects lvl))
+
+  (cond
+   ((level-paused? lvl) (render-pause-screen))
+   ((level-game-over? lvl) '(render-game-over)) ;; TODO
+   ((level-level-cleared? lvl) '(render-next-level-anim)) ;; TODO??
+   ))
+
+(define-method (render (l level))
+  (println "unimplemented level renderer (state = "
+           (level-current-state l) ")"))
+
+;;; Object rendering
 
 (define (render-object obj texture color char)
   (let* ((world-coords (grid-coord->world-coord obj))
@@ -1428,27 +1462,3 @@
                     (else renderer))))
         (translate x y scaled-renderer))))
 
-(define-method (render (lvl (match-member: level current-state pre-game)))
-  (render (level-get 'pre-game-label lvl))
-  )
-
-(define-method (render (lvl (match-member: level current-state start)))
-  (render-title-bar lvl)
-  (for-each render (level-objects lvl)))
-
-(define-method (render (lvl (match-member: level current-state in-game)))
-  (render-title-bar lvl)
-  
-  ;; it is expected that the object list is ordered with increasing
-  ;; layer order...
-  (for-each render (level-objects lvl))
-
-  (cond
-   ((level-paused? lvl) (render-pause-screen))
-   ((level-game-over? lvl) '(render-game-over)) ;; TODO
-   ((level-level-cleared? lvl) '(render-next-level-anim)) ;; TODO??
-   ))
-
-(define-method (render (l level))
-  (println "unimplemented level renderer (state = "
-           (level-current-state l) ")"))
