@@ -72,23 +72,32 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-type corout id kont mailbox state-env
-                    prioritize? sleeping? delta-t msg-lists)
+                    sleeping? delta-t msg-lists
+                    result)
+
+(define corout-unbound-result (gensym 'corout-unbound-result))
 (define (new-corout id thunk)
   (let ((kont (lambda (dummy) (terminate-corout (thunk))))
         (mailbox (new-queue))
         (state-env #f)
-        (prioritize? #f)
         (sleeping? #f)
         (delta-t #f)
-        (msg-lists (empty-set)))
+        (msg-lists (empty-set))
+        (result corout-unbound-result))
    (make-corout id kont mailbox state-env 
-                prioritize? sleeping? delta-t msg-lists)))
+                sleeping? delta-t msg-lists
+                corout-unbound-result)))
+
+(define (corout-get-result c)
+  (if (eq? (corout-result c) corout-unbound-result)
+      (raise 'coroutine-not-terminated-exception)
+      (corout-result c)))
+
 ;; (define-class corout ()
 ;;   (slot: id)
 ;;   (slot: kont)
 ;;   (slot: mailbox)
 ;;   (slot: state-env) ;; should be unprintable
-;;   (slot: prioritize?)
 ;;   (slot: sleeping?)
 ;;   (slot: delta-t)
 ;;   (slot: msg-lists)
@@ -99,7 +108,6 @@
 ;;         (kont        (lambda (dummy) (terminate-corout (thunk))))
 ;;         (mailbox     (new-queue))
 ;;         (state-env   #f)
-;;         (prioritize? #f)
 ;;         (sleeping?   #f)
 ;;         (delta-t     #f)
 ;;         (msg-lists   (empty-set)))))))
@@ -138,16 +146,19 @@
   (dequeue! (corout-mailbox thrd)))
 
 (define-type state current-corout q timer time-sleep-q root-k
-                   return-value-handler return-value return-to-sched
+                   return-to-sched
                    parent-state dynamic-handlers sleeping-coroutines)
+
+(define (make-fresh-state)
+  (make-state unbound unbound unbound unbound unbound
+              unbound
+              unbound unbound unbound))
 ;; (define-class state ()
 ;;   (slot: current-corout)
 ;;   (slot: q)
 ;;   (slot: timer)
 ;;   (slot: time-sleep-q)
 ;;   (slot: root-k)
-;;   (slot: return-value-handler)
-;;   (slot: return-value)
 ;;   (slot: return-to-sched)
 ;;   (slot: parent-state) ;unprintable:
 ;;   (slot: dynamic-handlers)
@@ -157,19 +168,10 @@
 ;; (define-class sem () (slot: value) (slot: wait-queue))
 
 ;; Must be used to enqueue a coroutine in the coroutine active
-;; queue. The sleep queue *must not* use otherwise, it will result in
-;; an infinite loop if a coroutine is to be prioritized.
+;; queue. 
 (define (corout-enqueue! q corout)
-  (if (corout-prioritize? corout)
-      (queue-push! q corout)
-      (enqueue! q corout)))
+  (enqueue! q corout))
 
-;; A prioritized coroutine will be scheduled as the next coroutine to
-;; run, if scheduled with corout-enqueue!.
-(define (prioritize! c)
-  (corout-prioritize?-set! c #t))
-(define (unprioritize! c)
-  (corout-prioritize?-set! c #f))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; time related sleep queue
@@ -201,18 +203,54 @@
 ;;; Scheduling state global variables
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define current-corout       (make-parameter unbound))
-(define self                 current-corout) ; variable alias
-(define q                    (make-parameter unbound))
-(define timer                (make-parameter unbound))
-(define time-sleep-q         (make-parameter unbound))
-(define root-k               (make-parameter unbound))
-(define return-value-handler (make-parameter unbound))
-(define return-value         (make-parameter unbound))
-(define parent-state         (make-parameter unbound))
-(define return-to-sched      (make-parameter unbound))
-(define dynamic-handlers     (make-parameter unbound))
-(define sleeping-coroutines  (make-parameter unbound))
+(define ___internal-state___ unbound)
+
+(define (current-corout . new-val)
+  (if (pair? new-val)
+      (state-current-corout-set! ___internal-state___ (car new-val))
+      (state-current-corout ___internal-state___)))
+
+(define self current-corout) ;alias
+
+(define (q . new-val)
+  (if (pair? new-val)
+      (state-q-set! ___internal-state___ (car new-val))
+      (state-q ___internal-state___)))
+
+(define (timer . new-val)
+  (if (pair? new-val)
+      (state-timer-set! ___internal-state___ (car new-val))
+      (state-timer ___internal-state___)))
+
+(define (time-sleep-q . new-val)
+  (if (pair? new-val)
+      (state-time-sleep-q-set! ___internal-state___ (car new-val))
+      (state-time-sleep-q ___internal-state___)))
+
+(define (root-k . new-val)
+  (if (pair? new-val)
+      (state-root-k-set! ___internal-state___ (car new-val))
+      (state-root-k ___internal-state___)))
+
+(define (parent-state . new-val)
+  (if (pair? new-val)
+      (state-parent-state-set! ___internal-state___ (car new-val))
+      (state-parent-state ___internal-state___)))
+
+(define (return-to-sched . new-val)
+  (if (pair? new-val)
+      (state-return-to-sched-set! ___internal-state___ (car new-val))
+      (state-return-to-sched ___internal-state___)))
+
+(define (dynamic-handlers . new-val)
+  (if (pair? new-val)
+      (state-dynamic-handlers-set! ___internal-state___ (car new-val))
+      (state-dynamic-handlers ___internal-state___)))
+
+(define (sleeping-coroutines . new-val)
+  (if (pair? new-val)
+      (state-sleeping-coroutines-set! ___internal-state___ (car new-val))
+      (state-sleeping-coroutines ___internal-state___)))
 
 (define (current-sim-time)
   (let ((t (timer)))
@@ -226,13 +264,12 @@
 
 ;; Saves the current scheduler's state into an object
 (define (save-state)
-  (if (not (or (unbound? (current-corout))
+  (if (not (or (unbound? ___internal-state___)
+               (unbound? (current-corout))
                (unbound? (q))
                (unbound? (timer))
                (unbound? (time-sleep-q))
                (unbound? (root-k))
-               (unbound? (return-value-handler))
-               (unbound? (return-value))
                (unbound? (dynamic-handlers))
                (unbound? (sleeping-coroutines))))
       
@@ -241,8 +278,6 @@
                   (timer)
                   (time-sleep-q)
                   (root-k)
-                  (return-value-handler)
-                  (return-value)
                   (return-to-sched)
                   (parent-state)
                   (dynamic-handlers)
@@ -252,32 +287,10 @@
 ;; Restores the givent state object into the environment
 (define (restore-state state)
   (if state
+      (set! ___internal-state___ state)
       (begin
-        (current-corout       (state-current-corout state))
-        (q                    (state-q state))
-        (timer                (state-timer state))
-        (time-sleep-q         (state-time-sleep-q state))
-        (root-k               (state-root-k state))
-        (return-value-handler (state-return-value-handler state))
-        (return-value         (state-return-value state))
-        (return-to-sched      (state-return-to-sched state))
-        (parent-state         (state-parent-state state))
-        (dynamic-handlers     (state-dynamic-handlers state))
-        (sleeping-coroutines  (state-sleeping-coroutines state)))
-
-      ;; un-initializing the global simulation state
-      (begin
-        (current-corout       unbound)
-        (q                    unbound)
-        (timer                unbound)
-        (time-sleep-q         unbound)
-        (root-k               unbound)
-        (return-value-handler unbound)
-        (return-value         unbound)
-        (return-to-sched      unbound)
-        (parent-state         unbound)
-        (dynamic-handlers     unbound)
-        (sleeping-coroutines  unbound))))
+        ;; un-initializing the global simulation state
+        (set! ___internal-state___ unbound))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -296,15 +309,7 @@
     (cond
      ((and (corout? current-corout-val)
            (not (corout-sleeping? current-corout-val)))
-      (corout-enqueue! (q) current-corout-val))
-     ((and (not (corout? current-corout-val))
-           (case current-corout-val
-             ((___scheduler-is-speeping___ ___coroutine-was-paused___) #f)
-             (else #t)))
-      (return-value
-       (if (not (return-value))
-           current-corout-val
-           ((return-value-handler) (return-value) current-corout-val)))))))
+      (corout-enqueue! (q) current-corout-val)))))
 
 (define (wake-up-sleepers)
   (let ((now (current-sim-time)))
@@ -318,21 +323,18 @@
              (corout-enqueue! (q) corout-to-wake)))))
 
 (define (resume-coroutine)
-  (continuation-capture
-   (lambda (k)
-     (return-to-sched k)
-     (let ((kontinuation (corout-kont (current-corout))))
-       ;; if it is a statefull coroutine
-       ;; (executing a scheduler) then restore its
-       ;; environnement
-       (if (corout-state-env (current-corout))
-           (let ((state (save-state)))
-             (restore-state (corout-state-env (current-corout)))
-             (parent-state state)))
-       ;; run the coroutine
-       (if (procedure? kontinuation)
-           (kontinuation 'go)
-           (continuation-return kontinuation 'go))))))
+  (let ((kontinuation (corout-kont (current-corout))))
+    ;; if it is a statefull coroutine
+    ;; (executing a scheduler) then restore its
+    ;; environnement
+    (if (corout-state-env (current-corout))
+        (let ((state (save-state)))
+          (restore-state (corout-state-env (current-corout)))
+          (parent-state state)))
+    ;; run the coroutine
+    (if (procedure? kontinuation)
+        (kontinuation 'go)
+        (continuation-return kontinuation 'go))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Scheduler
@@ -353,15 +355,10 @@
   ;; Get the next coroutine, if one is available
   (current-corout (dequeue! (q)))
 
-  ;; if there is one coroutine, run it, else stop the coroutine
-  ;; scheduler.
   (cond
-   ((corout? (current-corout))
 
-    (resume-coroutine)
-
-    ;; loop the scheduler, if the coroutine finished
-    (corout-scheduler))
+   ;; if there is one coroutine, run it
+   ((corout? (current-corout)) (resume-coroutine))
 
    ;; If only sleeping coroutines are left, sleep for a while
    ((not (time-sleep-q-empty? (time-sleep-q)))
@@ -381,7 +378,7 @@
    ;; environnement and end this scheduler
    (else
     (let ((finish-scheduling (root-k))
-          (ret-val (return-value)))
+          (ret-val (void)))
       (if (> (sleeping-coroutines) 0)
           (error "Deadlock detected in coroutine system..."))
       (restore-state (parent-state))
@@ -389,8 +386,7 @@
 
 
 ;; Simple abstraction that just resumes the scheduler's calculation
-(define (resume-scheduling)
-  (continuation-return (return-to-sched) 'back-in-sched))
+(define resume-scheduling corout-scheduler)
 
 ;; Semaphore's internals 
 (define (sem-increase! sem) (sem-value-set! sem (+ (sem-value sem) 1)))
@@ -515,45 +511,39 @@
 (define (terminate-corout exit-val)
   (for-each (lambda (msg-list) (unsubscribe msg-list (self)))
             (corout-msg-lists (self)))
+  (corout-result-set! (self) exit-val)
   (current-corout exit-val)
   (resume-scheduling))
 
-;; Starts the scheduling of the passed coroutines. This call will
-;; return when all the coroutine will have terminated. It will use the
-;; default return value handler, thus will return the value returned
-;; by the last coroutine to finish.
-(define (simple-boot c1 . cs)
-  (define default-freq 0.001)
-  (let* ((used-timer (start-timer! default-freq))
-         (result     (apply boot used-timer (lambda (acc val) val) c1 cs)))
+;; Starts the scheduling of the givent coroutines with a specific
+;; return value handler.  The used timer optionnal parameter is only
+;; significant for the primordial system. In recursive cases the
+;; primodordial timer will be shared to children systems.
+(define (boot coroutines
+              #!optional (used-timer (start-timer! 0.001)))
+  (let ((result
+         (continuation-capture
+          (lambda (k)
+            (begin
+              (let ((fresh-start? (unbound? ___internal-state___)))
+                (if fresh-start?
+                    (begin
+                      (set! ___internal-state___ (make-fresh-state))
+                      (parent-state #f)
+                      (timer used-timer))
+                    (begin
+                      (parent-state (save-state))
+                      (timer (timer))))
+                (root-k               k)
+                (current-corout       #f)
+                (q                    (new-queue))
+                (time-sleep-q         (make-time-sleep-q))
+                (dynamic-handlers     '())
+                (sleeping-coroutines  0))
+              (for-each (curry2 corout-enqueue! (q)) coroutines)
+              (corout-scheduler))))))
     (stop-timer! used-timer)
     result))
-
-;; Starts the scheduling of the givent coroutines with a specific
-;; return value handler. The return value handler must have the
-;; following format: (lambda (acc val) ...) where acc is the
-;; accumulated return value and val is the last returned value by a
-;; coroutine. The accumulated value will be return when the scheduling
-;; process finishes.
-(define (boot used-timer return-handler c1 . cs)
-  (continuation-capture
-   (lambda (k)
-     (begin
-       (let ((fresh-start? (unbound? (current-corout))))
-         (if (not fresh-start?) (parent-state (save-state)))
-         (root-k               k)
-         (current-corout       #f)
-         (q                    (new-queue))
-         (timer                used-timer)
-         (time-sleep-q         (make-time-sleep-q))
-         (return-value-handler return-handler)
-         (return-value         #f)
-         (dynamic-handlers     '())
-         (sleeping-coroutines  0)
-         (if fresh-start? (parent-state #f)))
-       (for-each (lambda (c) (corout-enqueue! (q) c))
-                 (cons c1 cs))
-       (corout-scheduler)))))
 
 
 ;; Kills all the currently executing coroutines. This will operate on

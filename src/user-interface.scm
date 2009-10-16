@@ -305,9 +305,9 @@
 
              (init-GL screen-max-x screen-max-y)
              (start-threads!)
-             (simple-boot
-              (new-corout 'main-menu
-                          (lambda () (game-loop (new logo-menu)))))))
+             (boot (list
+                    (new-corout 'main-menu
+                                (lambda () (game-loop (new logo-menu))))))))
           (display "Could not set SDL screen")))
   )
 
