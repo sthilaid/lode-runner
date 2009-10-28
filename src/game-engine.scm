@@ -4,6 +4,7 @@
 
 ;; FPS is calculated in the user interface
 (define FPS (create-bounded-simple-moving-avg 5 init-value: 60.))
+(define GC-INFO '())
 
 ;; Note: The player movement speed must be multipliable to give 1 so
 ;; accepteble values are 1/8 (*8), 2/8 (*4), 4/8 (*2) and 1. This
@@ -464,12 +465,12 @@
 (define (pre-game-transition lvl)
   (println "pregame!\n")
   (let ((label (new label 'pre-game-label "Player 1" 24 18 'white
-                      (list (flash 15)
-                            (lifetime 180 (lambda (l lvl)
-                                            (level-delete! l lvl)
-                                            (transition lvl 'start)))))))
-      (gui-centered?-set! label #t)
-      (level-add! label lvl)))
+                    (list (flash 15)
+                          (lifetime 180 (lambda (l lvl)
+                                          (level-delete! l lvl)
+                                          (transition lvl 'start)))))))
+    (gui-centered?-set! label #t)
+    (level-add! label lvl)))
 
 (define (level-start-transition lvl)
   (define (make-counter-label counter)

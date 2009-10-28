@@ -133,9 +133,8 @@
   (load "src/scm-lib.scm") 
 
   (let* ((last-pat (take-right pattern-list 1))
-         (timeout-val (if (eq? (caar last-pat) 'after)
-                          (cadar last-pat)
-                          'infinity))
+         (timeout-val (and (eq? (caar last-pat) 'after)
+                           (cadar last-pat)))
          (timeout-ret-val (if (eq? (caar last-pat) 'after)
                               (cddar last-pat)
                               '(raise mailbox-timeout-exception)))
@@ -146,8 +145,13 @@
                             pattern-list))
          (asts (map pattern->ast cleaned-patterns))
          (loop    (gensym 'loop))
-         (mailbox (gensym 'mailbox)))
-    `(let ((,mailbox (corout-mailbox (current-corout))))
+         (mailbox (gensym 'mailbox))
+         (absolute-timeout (gensym 'absolute-timeout)))
+    `(let ((,mailbox (corout-mailbox (current-corout)))
+           (,absolute-timeout ,(if timeout-val
+                                   `(+ (time->seconds (current-time))
+                                       ,timeout-val)
+                                   '+inf.0)))
        (let ,loop ()
             (cond
              ;; Normal message processing
@@ -155,6 +159,7 @@
                ,(generate-predicate asts)
                ,mailbox)
               => ,(generate-on-msg-found asts))
+
              ;; Dynamic handlers processing, loop back to continue to
              ;; wait for the messages
              ,(if use-dynamic-handlers?
@@ -162,12 +167,13 @@
                                 (dynamic-handlers))
                     => (lambda (res) (unbox res) (,loop)))
                   `(#f 'i-hope-this-is-optimized...))
+
              ;; if no acceptable message found, sleep
              (else
               ,(cond
                 (poll-only?
                  `(begin (unbox ,poll-only?)))
-                ((eq? timeout-val 'infinity)
+                ((not timeout-val)
                  `(begin (continuation-capture
                           (lambda (k)
                             (let ((corout (current-corout)))
@@ -175,15 +181,16 @@
                               (corout-set-sleeping-mode!
                                corout
                                (sleeping-on-msg))
-                              (resume-scheduling))))
+                              (corout-scheduler))))
                          (,loop)))
                 (else
-                 `(let ((msg-q-size (queue-size ,mailbox)))
-                    (sleep-for ,timeout-val interruptible?: #t)
-                    ;; might be awoken either from a (!) or timeout
-                    (if (= (queue-size ,mailbox) msg-q-size)
-                        (begin ,@timeout-ret-val)
-                        (,loop)))))))))))
+                 `(let ((sleep-delta (- ,absolute-timeout
+                                        (time->seconds (current-time)))))
+                    (if (> sleep-delta 0)
+                        (begin
+                          (sleep-for sleep-delta interruptible?: #t)
+                          (,loop))
+                        (begin ,@timeout-ret-val)))))))))))
 
 (define-macro (recv-only . pattern-list)
   (let* ((error-pattern

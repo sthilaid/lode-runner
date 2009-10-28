@@ -278,6 +278,9 @@
       (let* ((now (time->seconds (current-time)))
            (this-fps (floor (/ 1 (- now render-init-time)))))
       (FPS this-fps))
+      (##gc)
+      ;; (set! GC-INFO (cons (f64vector-ref (##process-statistics) 14)
+      ;;                     GC-INFO))
       (loop (time->seconds (current-time)) current-level))))
 
 (define (redraw-loop)
@@ -319,6 +322,10 @@
   (profile-stop!)
   (write-profile-report "profiling-report")
   (pp `(average frame-rate: ,(FPS)))
+  ;; (pp `(gc min dt: ,(minimum GC-INFO)))
+  ;; (pp `(gc average dt: ,(average GC-INFO)))
+  ;; (pp `(gc max dt: ,(maximum GC-INFO)))
+  ;; (pp (quick-sort < = > GC-INFO))
   (return 0))
 
 ;; Main function which only sets up and starts the game threads
