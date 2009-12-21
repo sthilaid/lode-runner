@@ -1,5 +1,3 @@
-;; (requires match.scm)
-
 ;; Critical section used with the semaphores. action and actions will
 ;; be executed inside the given semaphore (that should be a mutex for
 ;; a critical-section) and the semaphore will be released after the
@@ -128,9 +126,20 @@
      ((not (pair? list)) '())
      ((pred (car list)) (cons (car list) (filter pred (cdr list))))
      (else (filter pred (cdr list)))))
+
+  (define (drop lst n)
+    (if (or (< n 1) (not (pair? lst)))
+        lst
+        (drop (cdr lst) (- n 1))))
+
+  (define (take-right lst n)
+    (let lp ((lag lst)  (lead (drop lst n)))
+      (if (pair? lead)
+          (lp (cdr lag) (cdr lead))
+          lag)))
   (include "include/match.scm")
   ;; not sure wht to do.. otherwise that lib gets loaded 2 times
-  (load "src/scm-lib.scm") 
+  ;;(load "src/scm-lib.scm") 
 
   (let* ((last-pat (take-right pattern-list 1))
          (timeout-val (and (eq? (caar last-pat) 'after)
@@ -193,6 +202,23 @@
                         (begin ,@timeout-ret-val)))))))))))
 
 (define-macro (recv-only . pattern-list)
+  (define (drop lst n)
+    (if (or (< n 1) (not (pair? lst)))
+        lst
+        (drop (cdr lst) (- n 1))))
+
+  (define (take-right lst n)
+    (let lp ((lag lst)  (lead (drop lst n)))
+      (if (pair? lead)
+          (lp (cdr lag) (cdr lead))
+          lag)))
+
+  (define (drop-right lst n)
+    (let recur ((lag lst) (lead (drop lst n)))
+      (if (pair? lead)
+          (cons (car lag) (recur (cdr lag) (cdr lead)))
+          '())))
+
   (let* ((error-pattern
           `(,(list 'unquote 'msg)
             (error (to-string (show "received unexpected-message: " msg)))))
