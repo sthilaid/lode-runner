@@ -3,7 +3,8 @@
 (include "state-machine.scm")
 
 ;; FPS is calculated in the user interface
-(define FPS (create-bounded-simple-moving-avg 5 init-value: 60.))
+(define ENGINE-FPS (create-bounded-simple-moving-avg 5 init-value: 60.))
+(define TOTAL-FPS (create-bounded-simple-moving-avg 5 init-value: 60.))
 (define GC-INFO '())
 
 ;; Note: The player movement speed must be multipliable to give 1 so
@@ -1263,7 +1264,7 @@
     ;; TODO: score-calculation
     (change-current-level level (create-level-choice-menu)))
    (else
-    (update! level level current-time (lambda (t) (+ t (fl/ 1. (FPS)))))
+    (update! level level current-time (lambda (t) (+ t (fl/ 1. (TOTAL-FPS)))))
     (if (> (level-current-time level) (level-time-limit level))
         (level-game-over! level)
         (begin
